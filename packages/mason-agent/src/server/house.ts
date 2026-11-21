@@ -482,6 +482,15 @@ export function capText(text: string, maxChars: number): string {
 }
 
 /**
+ * The branch a repository mason creates starts on, whatever the machine's `init.defaultBranch` says.
+ *
+ * `git init` alone takes the branch name from the machine — `main` on a developer's box, `master` on a fresh runner —
+ * and the boot's checkout follows whatever branch `checkout.ts`'s `hostBranch` reads, so the branch a home syncs would
+ * otherwise be a git config mason does not own. One name, read by the creation and by the fallback, cannot disagree.
+ */
+export const CREATED_BRANCH = "main";
+
+/**
  * Initialise the agent's half as a git repository, so every memory write is something Denis can revert.
  *
  * The repository lives inside `agent/` because that is the half the tool machine mounts: `git` runs there, on the
@@ -490,6 +499,11 @@ export function capText(text: string, maxChars: number): string {
  * A repository created here is committed in the same breath. The files a home starts with — the profile, the skills
  * seeded from the repository — are the agent's first memory, not untracked dirt in a repository nothing was ever
  * committed to. `workspace/` is left out: it is scratch, and a tool's half-finished file is not a memory.
+ *
+ * It is `CREATED_BRANCH` by construction, not by the machine's config: `house.test.ts`, "ensureRepository() creates the
+ * memory repository on main, whatever init.defaultBranch says", pins it with `init.defaultBranch` set to `master`. A
+ * repository mason adopts — `.git` already there, the early return below — is left on the branch the person gave it:
+ * mason reads a history, it does not rename one.
  *
  * Both answers to "is this half safe to commit into" are refusals, thrown before `git init` and before anything is
  * staged: a `service/` directory here is the key, the token hashes and the transcript readable on the volume the tool
@@ -503,7 +517,8 @@ export async function ensureRepository(agentDir: string): Promise<void> {
 	if (stray.length > 0) throw new Error(strayRepository(home, stray[0] as string));
 	if (existsSync(join(agentDir, ".git"))) return;
 	try {
-		await run("git", ["init", "--quiet"], { cwd: agentDir });
+		// `-b` (git 2.28) names the branch here instead of taking `init.defaultBranch` from the machine.
+		await run("git", ["init", "--quiet", "-b", CREATED_BRANCH], { cwd: agentDir });
 	} catch {
 		// No git on the host: the files are still there, which is the part that matters.
 		return;

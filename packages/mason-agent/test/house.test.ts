@@ -18,6 +18,7 @@ import { Connection, LocalExecutionEnv, localDaemon } from "@earendil-works/pi-e
 import { daemonCommand } from "../src/server/env.ts";
 import { discoverSkills, SHIPPED_SKILLS_DIR } from "../src/server/extensions/skills.ts";
 import {
+	CREATED_BRANCH,
 	capText,
 	currentHouse,
 	ensureHouse,
@@ -233,6 +234,40 @@ test("ensureRepository() initialises the agent's half as a git repository, with 
 		(await run("git", ["log", "--format=%s"], { cwd: paths.agentDir })).stdout.trim().split("\n").length,
 		1,
 	);
+});
+
+/**
+ * The branch is mason's to name, not the machine's: bare `git init` takes `init.defaultBranch`, which is `main` on a
+ * developer's box and `master` on a fresh runner, and the boot's checkout follows whatever branch `hostBranch` reads
+ * from this repository. `GIT_CONFIG_COUNT` injects it into every child `git` here, the way a runner's config would.
+ */
+test("ensureRepository() creates the memory repository on main, whatever init.defaultBranch says", async (t) => {
+	if (!(await gitAvailable())) {
+		t.skip("git is not installed");
+		return;
+	}
+	const paths = housePaths(await tempDir("mason-house-branch-"));
+	await ensureHouse(paths, "SOUL FROM THE PRODUCT");
+	const names = ["GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0"];
+	const saved = names.map((name) => [name, process.env[name]] as const);
+	process.env.GIT_CONFIG_COUNT = "1";
+	process.env.GIT_CONFIG_KEY_0 = "init.defaultBranch";
+	process.env.GIT_CONFIG_VALUE_0 = "master";
+	try {
+		await ensureRepository(paths.agentDir);
+	} finally {
+		for (const [name, previous] of saved) {
+			if (previous === undefined) delete process.env[name];
+			else process.env[name] = previous;
+		}
+	}
+	const head = await run("git", ["symbolic-ref", "--short", "HEAD"], { cwd: paths.agentDir });
+	assert.equal(head.stdout.trim(), CREATED_BRANCH);
+	// One branch, the one mason named: a `master` here would be a second history the device is never sent.
+	const branches = await run("git", ["for-each-ref", "--format=%(refname:short)", "refs/heads"], {
+		cwd: paths.agentDir,
+	});
+	assert.deepEqual(branches.stdout.trim().split("\n"), [CREATED_BRANCH]);
 });
 
 /**

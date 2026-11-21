@@ -24,6 +24,7 @@ import type { Context } from "@earendil-works/chord";
 import { defineExtension, type Extension, GenerationTask, hook, ToolTask } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { deviceLost, isDeviceLost } from "./env.ts";
+import { CREATED_BRANCH } from "./house.ts";
 import { checkIncoming } from "./memory-check.ts";
 
 const run = promisify(execFile);
@@ -62,7 +63,11 @@ export interface CheckoutOptions {
 }
 
 /**
- * The host's current branch, or `main` for a repository that has no commit yet.
+ * The host's current branch, or `CREATED_BRANCH` for a host mason made whose `HEAD` names no branch at all.
+ *
+ * The name comes from the repository, never from the machine: a repository mason created is `CREATED_BRANCH` by
+ * construction (`house.ts`), and one it adopted keeps the person's branch — `master` included, because renaming a
+ * history nobody asked mason to touch is not a sync.
  *
  * A detached `HEAD` is refused rather than guessed: a checkout follows a branch, and fast-forwarding a detached host
  * would move a commit no branch names. An empty repository is a first boot, not an error.
@@ -71,12 +76,12 @@ export async function hostBranch(host: string): Promise<string> {
 	try {
 		const { stdout } = await run("git", ["-C", host, "symbolic-ref", "--short", "HEAD"]);
 		const branch = stdout.trim();
-		return branch === "" ? "main" : branch;
+		return branch === "" ? CREATED_BRANCH : branch;
 	} catch {
 		try {
 			await run("git", ["-C", host, "rev-parse", "--verify", "--quiet", "HEAD"]);
 		} catch {
-			return "main";
+			return CREATED_BRANCH;
 		}
 		throw new Error(
 			`${host} is a detached HEAD: check out a branch before starting; a checkout follows a branch, not a commit`,
