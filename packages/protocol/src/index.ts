@@ -87,6 +87,7 @@ export const ERROR_CODE = {
 	invalidRequest: "mason.invalid_request",
 	notAuthenticated: "mason.not_authenticated",
 	assetExpired: "mason.asset_expired",
+	assetCorrupt: "mason.asset_corrupt",
 	internal: "mason.internal",
 } as const;
 
