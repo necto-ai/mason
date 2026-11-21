@@ -38,7 +38,7 @@ describe("the tool machine over ssh", () => {
 	async function open(): Promise<{ env: ExecutionEnv; daemon: { pid: number; version: string } }> {
 		if (environment !== undefined) return environment;
 		// No `onLog`: the daemon's and the transport's diagnostics belong to the proof script, not to the test's output.
-		manager = createRuntimeEnvManager({ workspaceDir: workspace ?? ".", ssh: sshTargetFromEnv() });
+		manager = createRuntimeEnvManager({ cwd: workspace ?? ".", ssh: sshTargetFromEnv() });
 		const target = await manager.ensure(CONVERSATION, workspace);
 		const info = await target.connection.info();
 		const env = await manager.envFor({ conversationId: CONVERSATION, cwd: workspace ?? info.home });

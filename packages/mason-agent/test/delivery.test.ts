@@ -32,7 +32,12 @@ import { DELIVERY_REMINDER, REPLY_ENTRY_KIND } from "../src/shared/contract.ts";
  * server, so the per-boot part is those two; they are named rather than assumed, and the runtime's own list is what is
  * asserted against, so a base extension added later is covered without a second list going stale.
  */
-const BOOT_EXTENSIONS: readonly string[] = unconditionalExtensionNames(["subagent", "codemode"]);
+const BOOT_EXTENSIONS: readonly string[] = unconditionalExtensionNames([
+	"checkout",
+	"memory-check",
+	"subagent",
+	"codemode",
+]);
 
 test("delivery carries the two gates and no tool: the message is the text the model wrote", () => {
 	assert.equal(Delivery.name, "delivery");

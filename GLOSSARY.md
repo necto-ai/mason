@@ -50,8 +50,8 @@ _Avoid_: global config, shared home
 
 **agent-owned files**:
 The part of the home the bot reads and edits with its own tools, on the machine its tools run on: profile, log, skills,
-routines, the workspace.
-_Avoid_: user data, workspace (the workspace is one directory inside it)
+routines. The workspace is a sibling, not one of its files.
+_Avoid_: user data, workspace (the workspace is beside it)
 
 **service-owned files**:
 The part of the home the bot never sees: soul, credentials, the MCP keys, the database, keys.
@@ -67,7 +67,8 @@ Durable facts about the person the bot works for, written and kept current by th
 _Avoid_: user memory, memory, context
 
 **workspace**:
-The directory a turn's tools work in, inside the agent-owned files.
+Scratch a turn works in, beside `agent/` and never inside it: a half-written file is not a memory commit.
+On a device the tools' cwd is the home above it, so `workspace/out/` is where a file for the person is made.
 _Avoid_: cwd (that is the path, not the place), sandbox
 
 **log**:
@@ -76,16 +77,15 @@ _Avoid_: journal, diary, memory
 
 ## The tool machine
 
-**share server**:
-A throwaway sshd that serves one directory and nothing else: one process per connection, chrooted to the share root,
-`internal-sftp` as the forced command, no shell, no pty, no forwarding. What it writes is the host user's own write,
-which is why the host's `fs.watch` fires for a guest edit.
-_Avoid_: file server, mount server, the host's sshd (an `authorized_keys` line grants the whole account)
+**device**:
+The machine a bot's tools run on, reached over ssh: one OS user, `/home/<bot>` its home, no service-owned byte anywhere
+in it. Mason dials it and never boots it.
+_Avoid_: container, sandbox, guest (a guest is the kernel's word for a microVM)
 
-**share root**:
-The one host directory a share server is chrooted to: `agent/`, never the home above it. Every path a guest names
-resolves inside it, so the sibling `service/` is out of reach by construction rather than by policy.
-_Avoid_: export, mount point (that is the path in the guest), shared folder
+**checkout**:
+The device's copy of the agent's memory, `~/agent`: a git repository whose commits cross to the host as bundles and
+whose tip is fetched back at the start of a turn.
+_Avoid_: mount, share, clone (a clone is what it is; the checkout is what the turn syncs)
 
 ## The prompt
 

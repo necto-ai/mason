@@ -67,7 +67,7 @@ test("housePaths() follows MASON_HOME and puts every path in one of the two halv
 			journalDir: join(home, "agent", "journal"),
 			skillsDir: join(home, "agent", "skills"),
 			agentsDir: join(home, "agent", "agents"),
-			workspaceDir: join(home, "agent", "workspace"),
+			workspaceDir: join(home, "workspace"),
 			events: join(home, "agent", "events.json"),
 			// The server's half: the soul it renders, the door, the keys and the state.
 			soul: join(home, "service", "soul.md"),
@@ -181,6 +181,30 @@ test("capText() leaves short text alone and truncates long text on a line bounda
 	assert.ok(capped.length < long.length);
 });
 
+test("ensureHouse() moves a home that still has agent/workspace to workspace/ beside it", async () => {
+	const paths = housePaths(join(await tempDir("mason-house-workspace-move-"), "home"));
+	await mkdir(join(paths.agentDir, "workspace"), { recursive: true, mode: 0o700 });
+	await writeFile(join(paths.agentDir, "workspace", "half-written.md"), "a tool was here\n", "utf8");
+
+	await ensureHouse(paths, "SOUL FROM THE PRODUCT");
+
+	assert.ok(!existsSync(join(paths.agentDir, "workspace")), "the old path is gone");
+	assert.equal(await readFile(join(paths.workspaceDir, "half-written.md"), "utf8"), "a tool was here\n");
+	// The memory's repository never held the scratch directory, so nothing was committed or ignored.
+	assert.ok(!existsSync(join(paths.agentDir, ".git")));
+});
+
+test("a home holding both agent/workspace and workspace/ is refused, and nothing is moved", async () => {
+	const paths = housePaths(join(await tempDir("mason-house-workspace-both-"), "home"));
+	await mkdir(join(paths.agentDir, "workspace"), { recursive: true, mode: 0o700 });
+	await mkdir(paths.workspaceDir, { recursive: true, mode: 0o700 });
+	await assert.rejects(
+		ensureHouse(paths, "SOUL FROM THE PRODUCT"),
+		/both .*agent\/workspace and .*\/workspace: the workspace now lives beside agent\//,
+	);
+	assert.ok(existsSync(join(paths.agentDir, "workspace")), "the old copy stays for the person to merge");
+});
+
 test("ensureRepository() initialises the agent's half as a git repository, with the first commit made", async (t) => {
 	if (!(await gitAvailable())) {
 		t.skip("git is not installed");
@@ -197,7 +221,9 @@ test("ensureRepository() initialises the agent's half as a git repository, with 
 	const tracked = await run("git", ["ls-files"], { cwd: paths.agentDir });
 	assert.match(tracked.stdout, /^\.gitignore$/m);
 	assert.match(tracked.stdout, /^skills\/ocr\/SKILL\.md$/m, "the skills seeded at this boot are committed");
-	assert.match(await readFile(join(paths.agentDir, ".gitignore"), "utf8"), /^workspace\/$/m);
+	// The workspace is `../workspace`, outside the repository: its ignore line went with the move.
+	assert.ok(!existsSync(join(paths.agentDir, "workspace")));
+	assert.doesNotMatch(await readFile(join(paths.agentDir, ".gitignore"), "utf8"), /^workspace\/$/m);
 	assert.equal((await run("git", ["status", "--porcelain"], { cwd: paths.agentDir })).stdout.trim(), "");
 
 	// Running it on every start must be harmless.

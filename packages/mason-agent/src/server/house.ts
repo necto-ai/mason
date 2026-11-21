@@ -9,14 +9,14 @@
  *
  * ```text
  * ~/.mason/<bot>/
- * ├── agent/                  # everything the agent owns: mounted into the tool machine, same absolute path
+ * ├── agent/                  # the agent's memory: the host's repository, and the device's checkout
  * │   ├── profile.md          # who Denis is, agent-managed, always in the prompt
  * │   ├── log/2026-10-20.md   # dated facts, one per line, appended through the execution environment
  * │   ├── journal/            # where the daily journal will be written
  * │   ├── skills/<name>/SKILL.md
  * │   ├── events.json        # every event and routine the agent lets wake it (hooks.ts reads it)
- * │   ├── agents/             # worker definitions; they sit beside skills so `write` can edit them
- * │   └── workspace/          # the directory the agent works in, separate from the code that runs it
+ * │   └── agents/             # worker definitions; they sit beside skills so `write` can edit them
+ * ├── workspace/              # the directory the agent works in, a sibling of its memory
  * └── service/                # everything the server owns: never a path inside the tool machine
  *     ├── soul.md             # the first section of the system prompt, supplied by the operator
  *     ├── config.json         # the token hashes and the session key (`auth.ts`)
@@ -26,13 +26,13 @@
  *     └── data/               # agent.sqlite, routines-state.json, seeded-skills.json
  * ```
  *
- * The split is a mount boundary, not a permission mode: `bash` can talk its way around a mode. `agent/` is one volume
- * mounted at the same absolute path in the server and in the tool machine, so a path the server sends as a tool's cwd
- * and a path the agent reads are the same string; `service/` is a second volume mounted only in the server, so the bot
- * cannot read its own door, its own keys or its own credential.
+ * The split is a machine boundary, not a permission mode: `bash` can talk its way around a mode. `agent/` is the
+ * host's repository; a device holds a checkout of it at `~/agent`, and the two histories cross as git bundles over the
+ * execution channel (`checkout.ts`). `service/` is never a path inside the device, so the bot cannot read its own door,
+ * its own keys or its own credential.
  *
- * `agent/` is also the home's git repository (`agent/.git`): its files are the ones the history is about, and the agent
- * commits to it from the tool machine with ordinary `git`. `service/` is deliberately unversioned.
+ * `agent/` is the home's git repository (`agent/.git`): its files are the ones the history is about, and the agent
+ * commits to a working copy on the device with ordinary `git`. `service/` is deliberately unversioned.
  *
  * A home that predates the split is *not* opened by the server: its entries sit at the root, and booting it would write
  * the new layout on top of them and lose the soul and the profile to the defaults. `refuseLegacyHome` names them and
@@ -44,7 +44,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { chmod, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -81,6 +81,7 @@ export interface HousePaths {
 	readonly skillsDir: string;
 	/** Where worker definitions live, beside skills: a file the agent may edit with `write`. */
 	readonly agentsDir: string;
+	/** Scratch and output, beside the agent's memory: a tool's half-written file is never a memory commit. */
 	readonly workspaceDir: string;
 	/** The events and routines the agent owns: what wakes it, and when. */
 	readonly events: string;
@@ -110,10 +111,63 @@ export interface HousePaths {
  * inheriting whatever the developer has in `~/.mason`.
  */
 let configured: HousePaths | undefined;
+let configuredDeviceHome: string | undefined;
 
-export function configureHouse(paths: HousePaths): HousePaths {
+/**
+ * Point the process at its home, and at the device home its tools see.
+ *
+ * The second argument is the path the device calls the home: `/home/<bot>` on an ssh target, or the home itself when
+ * the tools run locally. It exists because the prompt is rendered on the host and must name the paths the tools see
+ * (`prompt.ts`); no table translates one into the other, both are computed from the two homes.
+ */
+export function configureHouse(paths: HousePaths, options: { deviceHome?: string } = {}): HousePaths {
 	configured = paths;
+	configuredDeviceHome = options.deviceHome;
 	return paths;
+}
+
+/** The paths a device holds, from the path it calls its home. */
+export interface DevicePaths {
+	readonly home: string;
+	readonly agentDir: string;
+	readonly workspaceDir: string;
+	readonly profile: string;
+	readonly logDir: string;
+	readonly journalDir: string;
+	readonly skillsDir: string;
+	readonly agentsDir: string;
+	readonly events: string;
+}
+
+/** One home as the machine running the tools names it: the device's layout, or the local home's own paths. */
+export function devicePaths(deviceHome: string): DevicePaths {
+	const agentDir = join(deviceHome, "agent");
+	return {
+		home: deviceHome,
+		agentDir,
+		workspaceDir: join(deviceHome, "workspace"),
+		profile: join(agentDir, "profile.md"),
+		logDir: join(agentDir, "log"),
+		journalDir: join(agentDir, "journal"),
+		skillsDir: join(agentDir, "skills"),
+		agentsDir: join(agentDir, "agents"),
+		events: join(agentDir, "events.json"),
+	};
+}
+
+/** The home as the tools see it: the configured device home, or the host home when the tools run here. */
+export function currentDevice(): DevicePaths {
+	return devicePaths(configuredDeviceHome ?? currentHouse().home);
+}
+
+/**
+ * Where a device keeps a bot's home: `/home/<bot>`, one OS user per bot (ADR-0002).
+ *
+ * A deployment provisions the user; mason creates none and needs no root. The name is the bot's directory under the
+ * root, or the home's own name when `MASON_HOME` addressed it directly.
+ */
+export function deviceHomeFor(house: HousePaths): string {
+	return `/home/${house.root?.bot ?? basename(house.home)}`;
 }
 
 /**
@@ -171,7 +225,7 @@ function layout(path: string): HousePaths {
 		journalDir: join(agentDir, "journal"),
 		skillsDir: join(agentDir, "skills"),
 		agentsDir: join(agentDir, "agents"),
-		workspaceDir: join(agentDir, "workspace"),
+		workspaceDir: join(home, "workspace"),
 		events: join(agentDir, "events.json"),
 		dataDir: join(serviceDir, "data"),
 		config: join(serviceDir, "config.json"),
@@ -226,7 +280,6 @@ const HALVES: Readonly<Record<string, "agent" | "service">> = {
 	journal: "agent",
 	skills: "agent",
 	agents: "agent",
-	workspace: "agent",
 	"soul.md": "service",
 	"config.json": "service",
 	ssh: "service",
@@ -267,6 +320,7 @@ export async function ensureHouse(paths: HousePaths, defaultSoul: string): Promi
 	// A root is not a home: writing one's halves over it leaves every command refusing about directories mason made.
 	refuseRootAsHome(paths.home);
 	refuseLegacyHome(paths);
+	await migrateWorkspace(paths);
 	for (const directory of layoutDirectories(paths)) {
 		// `mode` only applies to directories this call creates, so an existing directory is tightened explicitly: a home
 		// from before this rule is `0755`, and it is the transcript inside that matters, not the age of the directory.
@@ -275,6 +329,38 @@ export async function ensureHouse(paths: HousePaths, defaultSoul: string): Promi
 	}
 	if (!existsSync(paths.soul)) await writeFile(paths.soul, `${defaultSoul}\n`, { encoding: "utf8", mode: 0o600 });
 	await seedShippedSkills(paths);
+}
+
+/**
+ * Move a pre-split `agent/workspace/` to `workspace/`, beside the memory.
+ *
+ * The directory was inside the repository, ignored but still on the volume, so a tool's half-finished file was one
+ * `git add -f` from a memory commit and a device that copied the home had to copy scratch too. The move is mechanical
+ * and the old path is unambiguous. Both paths present is not a decision this makes: it names the pair and creates
+ * nothing, because guessing which copy is the person's is worse than asking.
+ */
+async function migrateWorkspace(paths: HousePaths): Promise<void> {
+	const legacy = join(paths.agentDir, "workspace");
+	if (!existsSync(legacy)) return;
+	if (existsSync(paths.workspaceDir)) {
+		throw new Error(
+			`${paths.home} holds both ${legacy} and ${paths.workspaceDir}: the workspace now lives beside agent/. ` +
+				`Merge what is in ${legacy} into ${paths.workspaceDir} by hand, remove ${legacy}, and start again. ` +
+				"Nothing was moved.",
+		);
+	}
+	await renameDir(legacy, paths.workspaceDir);
+}
+
+/** `rename`, or a copy and remove when the two paths are on different devices (a move across a mount). */
+async function renameDir(source: string, target: string): Promise<void> {
+	try {
+		await rename(source, target);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
+		await cp(source, target, { recursive: true });
+		await rm(source, { recursive: true, force: true });
+	}
 }
 
 /**
@@ -518,10 +604,11 @@ async function commitAgentTree(agentDir: string, subject: string): Promise<void>
 }
 
 /**
- * What the agent's history never holds: `workspace/` is a tool's half-finished file, and a `service/` path here is the
- * leak the split exists to prevent. The latter is refused before staging as well; this is the last line, not the rule.
+ * What the agent's history never holds: a `service/` path here is the leak the split exists to prevent. The workspace
+ * needs no line any more: it is `../workspace`, outside the repository. The `service/` path is refused before staging
+ * as well; this is the last line, not the rule.
  */
-const AGENT_IGNORE = ["workspace/", "service/"];
+const AGENT_IGNORE = ["service/"];
 
 /** The directory a half's entries live in. */
 function _halfDir(paths: HousePaths, half: "agent" | "service"): string {

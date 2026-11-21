@@ -20,9 +20,9 @@ deployment may treat an authenticated command as ready; it must not assume any l
 
 ## The baseline
 
-- **git.** `agent/` is a git repository the person can diff and revert, and it is the same path inside the guest, so
-  the agent's own `git` commands read the same history the host sees. A guest without git cannot commit the memory it
-  is asked to keep.
+- **git.** The device holds `~/agent`, a checkout of the host's repository; the memory crosses as `git bundle`
+  payloads over the pi-env connection, never a mount (`checkout.ts`). A device without git cannot receive the memory or
+  commit it, so the agent has nothing to remember with.
 - **python3.** Most one-off work a tool call does — parsing a page, an image, a JSON blob — is a short script, and the
   a11y reader the desktop proof uses is `pyatspi` on top of it.
 - **node.** `agent-browser` is a Node package. Without node the guest has no browser CLI, whatever browser it has.
@@ -69,9 +69,8 @@ what is unset. Each fails when the device answers and the property does not hold
 |---|---|
 | `npm run prove:ssh-env` | mason's own `RemoteExecutionEnv` over ssh: `echo hi; id -u` exits 0 as uid 1000, and a second call reuses the daemon's pid instead of dialling again |
 | `packages/mason-agent/test/env-ssh.integration.test.ts` | the same assertions as a test, skipped with the reason named when `PI_ENV_SSH_HOST` is unset |
-| `npm run prove:share-boundary` | the share's five refusals, both write directions, a guest commit landing on the host's `HEAD`, the host's `fs.watch` firing for a guest write inside a deadline, and the share's latency beside the host's own |
+| `packages/mason-agent/test/checkout-sync.test.ts` | a guest commit is the host's `HEAD`, a host commit is in the next guest's log, a person's mid-turn edit merges, and a rule-breaking profile continues the turn once and then lands fixed |
 | `npm run prove:guest-desktop` | no resolver and no direct egress, the proxy answering HTTP and HTTPS, Chromium rendering through it, the AT-SPI delay, and the window-manager A/B behind `snapshot` plus `screenshot` |
 
-The share itself is a **share server** chrooted to a **share root**; both words are in the
-[glossary](../GLOSSARY.md). Its refusals and its write path are what make `agent/` one directory two machines write,
-and its `fs.watch` is what keeps `hooks.ts` honest.
+The memory is a **checkout** on the device and a repository on the host ([glossary](../GLOSSARY.md)). No path is
+shared, so `hooks.ts` reads the host's own `agent/events.json` and the checkout is the only copy a tool can reach.

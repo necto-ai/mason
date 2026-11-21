@@ -46,11 +46,15 @@ if (flag("--reset")) {
 await mkdir(stateDir, { recursive: true, mode: 0o700 });
 await mkdir(sshDir, { recursive: true, mode: 0o700 });
 await mkdir(home, { recursive: true, mode: 0o700 });
-// Both halves of the home: without containers they are ordinary sibling directories on one filesystem, and the split
-// is a layout here rather than a boundary: `bash` can see `service/` in the dev stack, so nothing about this run
-// protects it for a developer.
-await mkdir(resolve(home, "agent", "workspace"), { recursive: true, mode: 0o700 });
+// Both halves of the home, and the workspace beside the memory: without containers they are ordinary sibling
+// directories on one filesystem, and the split is a layout here rather than a boundary: `bash` can see `service/` in
+// the dev stack, so nothing about this run protects it for a developer.
+await mkdir(resolve(home, "workspace"), { recursive: true, mode: 0o700 });
 await mkdir(resolve(home, "service", "ssh"), { recursive: true, mode: 0o700 });
+// The sshd logs in as this developer, so the device home is a scratch directory under `.dev/` rather than
+// `/home/<bot>`: the checkout writes `agent/` and `workspace/` there, and nothing of the developer's own is touched.
+const deviceHome = resolve(stateDir, fake ? "device-fake" : "device");
+await mkdir(deviceHome, { recursive: true, mode: 0o700 });
 // A home carried over from a real install can arrive 0777 on some filesystems; tightening here is cheap.
 await chmod(home, 0o700).catch(() => {});
 
@@ -142,6 +146,7 @@ const server = spawn(process.execPath, ["--experimental-strip-types", resolve(ro
 					PI_ENV_SSH_IDENTITY: clientKey,
 					PI_ENV_SSH_KNOWN_HOSTS: knownHosts,
 					PI_ENV_SSH_ALIAS: hostKeyAlias,
+					PI_ENV_DEVICE_HOME: deviceHome,
 				}),
 	},
 });

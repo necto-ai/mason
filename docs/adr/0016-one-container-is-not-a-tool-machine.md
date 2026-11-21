@@ -73,3 +73,27 @@ Each of these now points here, because each claims a boundary one container does
   `common/auth.json` instead of the environment.
 - `test/house.test.ts` — the layout, the modes, and the refusal of a `service/` path inside `agent/`: the machinery a
   deployment's mount makes real, and the image's own limits.
+
+## Amendment: the device is a checkout, and one VM may hold several bots
+
+**Date:** 2026-11-21. **Revisited if:** a deployment gives one bot a VM of its own, or a tool can read another bot's
+home on a shared device.
+
+Three sentences above are qualified.
+
+**"One kernel per bot" is stronger than a deployment has to give.** A VM may hold several masons, one OS user each, and
+that is a weaker boundary than this ADR implied: uid separation stops one bot reading another's files on the same
+kernel, and nothing more. The claim that matters is unaffected — the tool kernel holds no service-owned byte and shares
+no filesystem with the server. A second bot on the same VM does not hand it `service/`; it only shares a kernel with
+its neighbour, which is stated here rather than implied away.
+
+**The mount becomes a checkout.** `agent/` is no longer a volume mounted at the same absolute path. The host keeps the
+repository no tool mounts, and the device holds `~/agent`, a checkout synced as git bundles over the pi-env channel
+(ADR-0002's amendment, `checkout.ts`). The reason is the same one this ADR gives for the microVM: a share that needs a
+server and a credential is a second boundary to secure, and a bundle over the channel that already exists is not.
+
+**The provider-key rule is scoped to a one-container or local target.** Point 3 above — a key reaches the server as a
+file, never an environment variable — is about a target whose tools share the server's filesystem, where `/proc/1/environ`
+is one `read` away. On a device the harness calls the model on the host and the provider key never crosses; the rule is
+therefore about the demo image and a `kind: "local"` run, not about the device shape. `doctor` says a local target is a
+development target for the same reason: the device contract does not cover it.
