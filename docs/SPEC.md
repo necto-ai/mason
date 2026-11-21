@@ -77,7 +77,7 @@ mason/
         │       ├── prompt.ts          # The whole system prompt: every section, in order, with its source
         │       ├── mcp.ts             # The live tool catalog: mcp_search, mcp_describe, mcp_call, mcp_read_resource
         │       ├── integrations.ts    # service/integrations.json: the services the agent reaches
-        │       ├── attachments.ts     # Content ids and bytes: the upload store and a turn's outbox
+        │       ├── attachments.ts     # Content ids and bytes: the upload store and the device inbox
         │       ├── limits.ts          # The budgets and caps every refusal names
         │       ├── untrusted.ts       # Fencing for data the model did not write
         │       ├── resident.ts        # The turn loop, the queue and the run supervisor's wiring
@@ -510,8 +510,9 @@ raises an event; there is no append that writes a row of its own.
 Every append is deduplicated durably: both are claimed by request id (`:submission:`, `:fire:`), and an event also by
 the event log, because an absent routine makes no entry. A resend is answered `{"outcome": "duplicate"}` and creates no
 second operation, before or after a restart. Content is typed blocks: text and markdown become the message
-unprefixed, and a file block is read from the attachment store and written into the agent's `workspace/inbox/`, with
-images also passed as image blocks.
+unprefixed, and a file block is identity only — id, name, type, size, and a line naming `~/inbox/<contentId>/<name>`;
+the turn's first request (`src/server/inbox.ts`) lands the files through the execution environment and inlines an image
+inside pi's ceiling. Submit writes nothing.
 
 **One message path, and the conversation is the delivery.** The agent's text is the message: every assistant generation
 that wrote something is a `delivered` row of the `conversation` state, and every client with the `user` grant reads it
@@ -522,17 +523,19 @@ entry as provenance, and no row carries it. The SDK offers the split as `createU
 the same socket and credential class; the combined factory is internal.
 
 **Assets.** `POST /api/connector/attachments` (raw body, `content-type`, `x-mason-filename`) stores a person's upload
-under a content id and answers `{contentId, size, expiresAt}`. A turn's deliverable is written under `out/`, linked as
-`file:out/<path>` or simply left there; after the run `src/server/assets.ts` resolves the real path under `out/`, refuses
-a symlink, an escape, a `service/` path or a file over 25 MiB, stores the bytes and rewrites the link to `asset:<id>`.
-The store is `service/data/attachments/<connector>/` and `.../.out/`, durable because a restart between an upload and the
-submission that references it is the moment a resend happens. A user or agent row carries `assets?: AssetRef[]`
-(`{id, name, mimeType, size}`); `GET /api/connector/assets/<id>` serves the bytes to the uploader or to a connector with
-the `user` grant, with the stored type and a `Content-Disposition`. An event grant is `403`, an id that is gone is `404`,
+under a content id and answers `{contentId, size, expiresAt}`. A turn's deliverable is written under `out/` and linked in
+the message — `[name](out/name.ext)`, or the older `file:out/<path>` — and after the run `src/server/assets.ts` resolves
+the real path under `out/`, refuses a symlink, an escape, a `service/` path or a file over 25 MiB, stores the bytes and
+rewrites the link to `asset:<id>`. A file the message never links is not attached. The store is
+`service/data/attachments/<connector>/` and `.../.out/`, durable because a restart between an upload and the submission
+that references it is the moment a resend happens; its sidecar records a sha256, and a mismatch is a refusal, never short
+bytes. A user or agent row carries `assets?: AssetRef[]` (`{id, name, mimeType, size}`); a user row's is what the message
+links. `GET /api/connector/assets/<id>` serves the bytes to the uploader or to a connector with the `user` grant, with the
+stored type and a `Content-Disposition`. An event grant is `403`, an id that is gone is `404`,
 and retention is 90 days by default (`MASON_ASSET_TTL_MS`, in milliseconds): an expired asset is `410` for one further
-window, then `404`, and its message stays. Per turn: 10
-assets, 25 MiB each, 100 MiB total. Over the upload cap is `413`, and the id never reaches the filesystem unless it
-matches `cnt_<32 hex>`.
+window, then `404`, and its message stays; corrupt bytes are `410 mason.asset_corrupt`. Per turn: 10 assets, 25 MiB
+each, 100 MiB total. Over the upload cap is `413`, and the id never reaches the filesystem unless it matches
+`cnt_<32 hex>`.
 
 **Budgets.** Appends (60, of which events are 6), controls (6, with `stop` in a class of its own) and attachments (30) are
 counted separately per connector, in the process's sliding-window limiter (`src/server/limits.ts`), keyed per connector

@@ -22,9 +22,9 @@ connector presents a credential mason issued for it.
 
 The base list, in this order: coding-tools, prompt, delivery.
 
-Then the ones the boot builds for itself: subagent, codemode always, and `mcp` when an enabled entry has an MCP
-server. A per-boot extension owns something that dies with the process — a lease directory, a QuickJS sandbox, one client
-socket per integration — which is why none of them is a module constant.
+Then the ones the boot builds for itself: inbox, subagent, codemode always, and `mcp` when an enabled entry has an MCP
+server. A per-boot extension owns something that dies with the process — the asset store, a lease directory, a QuickJS
+sandbox, one client socket per integration — which is why none of them is a module constant.
 
 The tool list is pinned by the prompt test, because the prompt is where it is announced. No MCP tool schema is ever
 in it: a service's tools are reached from a script.

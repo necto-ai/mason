@@ -112,6 +112,7 @@ line to put it in.
 | `mason.invalid_request` | the call is not a call this side makes |
 | `mason.not_authenticated` | the credential did not open the attachment upload or an asset download |
 | `mason.asset_expired` | the asset's retention passed; the bytes are gone and the message is not |
+| `mason.asset_corrupt` | the stored bytes do not match the sha256 recorded with them; a refusal, never a short file |
 | `mason.internal` | mason itself failed, and not on the caller's account: the same call may work on a retry |
 
 ## Assets
@@ -120,9 +121,9 @@ Bytes never cross the contract. A connector `POST`s them to `/api/connector/atta
 `contentId` back, and references that id in a `file` block. The cap and the expiry are in `session.limits`.
 
 A row may carry `assets?: AssetRef[]`, where `AssetRef` is `{ id, name, mimeType, size }`: the user row carries what the
-person sent, and the agent row carries what the turn produced. The array is authoritative, and each id is a content id,
-never a path or base64. The agent names its own file with a `file:out/<path>` link; mason stores it and rewrites the link
-to `asset:<id>`.
+person sent, and the agent row carries exactly what its message links. Each id is a content id, never a path or base64.
+The agent links a file under `out/` and mason stores it, rewriting the link to `asset:<id>`; a file it never links is
+not attached.
 
 `GET /api/connector/assets/<id>` returns the bytes with the stored `Content-Type`, its `Content-Length` and
 `Content-Disposition: attachment`. A connector with the `user` grant reads its conversation's assets in both directions;

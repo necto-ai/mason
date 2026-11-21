@@ -27,6 +27,7 @@ import {
 } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
+import { AttachmentStore } from "./attachments.ts";
 import {
 	type AgentRole,
 	commonPaths,
@@ -47,6 +48,7 @@ import { Delivery } from "./extensions/delivery.ts";
 import { createSubagent, SUBAGENT_EXTENSION } from "./extensions/subagent.ts";
 import { HooksManager } from "./hooks.ts";
 import { configureHouse, ensureHouse, ensureRepository, type HousePaths, housePaths } from "./house.ts";
+import { createInbox, INBOX_EXTENSION } from "./inbox.ts";
 import {
 	assertOneUserGrant,
 	currentIntegrations,
@@ -68,9 +70,9 @@ import { RETRY_HOOK } from "./run-retry.ts";
  * writes its selection explicitly without `delivery`, so both gates are absent from it and its words reach the person
  * only as the tool result. Nothing re-adds what a child did not select: the repair below only ever touches the root.
  *
- * Code mode and the MCP tools are not here: `openAgentRuntime` builds both per boot, because each owns something that
- * dies with the runtime — a QuickJS sandbox and one client socket per integration — and a module constant would outlive
- * the process's use of it.
+ * Code mode, the inbox and the MCP tools are not here: `openAgentRuntime` builds them per boot, because each owns
+ * something that dies with the runtime — a QuickJS sandbox, the asset store, and one client socket per integration — and
+ * a module constant would outlive the process's use of it.
  */
 export const BASE_EXTENSIONS: readonly Extension[] = [
 	// The four the model works with: read, write, edit, bash, through the tool machine.
@@ -84,12 +86,12 @@ export const BASE_EXTENSIONS: readonly Extension[] = [
 /**
  * The extensions a boot builds for itself, beside the base list, and the names `docs/SURFACE.md` renders.
  *
- * `subagent` and `codemode` are in every boot; `mcp` is in a boot whose enabled integrations have a server. They are
- * built per boot rather than declared at import because each owns something that dies with the process — a lease
- * directory, a QuickJS sandbox, one client socket per integration. `scripts/surface.ts` renders exactly this list, and
- * `npm run gen:surface` is what keeps the document and the boot from drifting.
+ * `inbox`, `subagent` and `codemode` are in every boot; `mcp` is in a boot whose enabled integrations have a server.
+ * They are built per boot rather than declared at import because each owns something that dies with the process — the
+ * asset store, a lease directory, a QuickJS sandbox, one client socket per integration. `scripts/surface.ts` renders
+ * exactly this list, and `npm run gen:surface` is what keeps the document and the boot from drifting.
  */
-export const PER_BOOT_EXTENSIONS = [SUBAGENT_EXTENSION, CODEMODE_EXTENSION] as const;
+export const PER_BOOT_EXTENSIONS = [INBOX_EXTENSION, SUBAGENT_EXTENSION, CODEMODE_EXTENSION] as const;
 /** The per-boot extension a boot installs only when an enabled integration has an MCP server. */
 export const MCP_EXTENSION_NAME = MCP_EXTENSION;
 
@@ -103,7 +105,7 @@ export const MCP_EXTENSION_NAME = MCP_EXTENSION;
 export function assertPerBootExtensions(names: readonly string[]): void {
 	const known = new Set<string>([...PER_BOOT_EXTENSIONS, MCP_EXTENSION_NAME]);
 	const built = new Set(names);
-	// `mcp` is the conditional one: present when a boot reached a server, absent when no entry has one. The other two are
+	// `mcp` is the conditional one: present when a boot reached a server, absent when no entry has one. The rest are
 	// unconditional, and a name outside the known set is a per-boot extension the document does not name.
 	const extra = [...built].filter((name) => !known.has(name));
 	const missing = PER_BOOT_EXTENSIONS.filter((name) => !built.has(name));
@@ -161,6 +163,8 @@ export interface AgentRuntime {
 	readonly env: RuntimeEnvManager;
 	/** What the integrations' MCP servers offer right now: the catalog `mcp_search` reads. */
 	readonly mcp: McpCatalog;
+	/** Uploaded bytes and a turn's files: durable in the home's data half, and the one store both directions read. */
+	readonly attachments: AttachmentStore;
 	readonly workspaceDir: string;
 	readonly model: AgentModelRef;
 	/** The two roles this boot runs: what the status line names and what a child conversation is configured with. */
@@ -209,6 +213,12 @@ export interface OpenAgentRuntimeOptions {
 	/** `true` (or `PI_FAUX_MODEL=1`) plays the model offline: deterministic tests and UI checks. */
 	readonly faux?: boolean;
 	readonly env?: RuntimeEnvManager;
+	/**
+	 * The asset store's bounds. Defaults are the protocol's (25 MiB, 90 days); a test that has to cross the cap or wait
+	 * for an expiry sets them small rather than writing 25 MB or sleeping 90 days.
+	 */
+	readonly attachmentBytes?: number;
+	readonly attachmentTtlMs?: number;
 	readonly onReport?: (error: unknown) => void;
 	/** Installed in addition to the base extensions. */
 	readonly extensions?: readonly Extension[];
@@ -458,6 +468,13 @@ export async function openAgentRuntime(context: Context, options: OpenAgentRunti
 		await ensureRepository(house.agentDir);
 		const workspaceDir = options.workspaceDir ?? house.workspaceDir;
 		const dataDir = options.dataDir ?? process.env.MASON_DATA ?? house.dataDir;
+		// One store for both directions, created with the boot because the inbox extension is part of the boot: the
+		// connector door and the download route read the same object, so an id the connector wrote is an id the route serves.
+		const attachments = new AttachmentStore({
+			dataDir,
+			...(options.attachmentBytes === undefined ? {} : { maxBytes: options.attachmentBytes }),
+			...(options.attachmentTtlMs === undefined ? {} : { ttlMs: options.attachmentTtlMs }),
+		});
 
 		// A home from before #220 is migrated by hand: say so once, rather than booting with no routines and no clue.
 		if (existsSync(join(house.agentDir, "routines.json"))) {
@@ -497,11 +514,22 @@ export async function openAgentRuntime(context: Context, options: OpenAgentRunti
 		const { models, ref, faux } = access;
 		const roles = access.roles ?? derivedRoles(ref);
 
+		// The inbox is per boot because the store is: the hook reads the same bytes the route serves. Its environment accessor
+		// is resolved at the first request, after the manager below exists; no request can run during a boot.
+		let environments: RuntimeEnvManager | undefined;
+		const inbox = createInbox({
+			store: attachments,
+			environments: () => {
+				if (environments === undefined) throw new Error("the inbox has no execution environments yet");
+				return environments;
+			},
+		});
 		// Delegation, per boot like code mode: the lease directory and the child's role are this boot's, so an extension
 		// built once at import time could carry neither.
 		const subagent = createSubagent({ leaseDir: options.leaseDir ?? leaseDirOf(), role: roles.subagent });
 		const extensionList: readonly Extension[] = [
 			...BASE_EXTENSIONS,
+			inbox,
 			subagent,
 			...(options.extensions ?? []),
 			...(mcp.extension === undefined ? [] : [mcp.extension]),
@@ -510,11 +538,13 @@ export async function openAgentRuntime(context: Context, options: OpenAgentRunti
 		// The per-boot names a document may render are the ones this boot actually built: a fourth built inline and left
 		// out of `PER_BOOT_EXTENSIONS` refuses the boot rather than escaping the surface check.
 		assertPerBootExtensions([
+			inbox.name,
 			subagent.name,
 			...(mcp.extension === undefined ? [] : [mcp.extension.name]),
 			codemode.extension.name,
 		]);
 		const unconditional = unconditionalExtensionNames([
+			inbox.name,
 			subagent.name,
 			...(mcp.extension === undefined ? [] : [mcp.extension.name]),
 			codemode.extension.name,
@@ -575,6 +605,7 @@ export async function openAgentRuntime(context: Context, options: OpenAgentRunti
 				...(ssh === undefined ? {} : { ssh }),
 				targets: targetDocChannel(harness),
 			});
+		environments = envManager;
 		opened.push(() => envManager.close());
 
 		const root = await harness.root(context, {
@@ -602,6 +633,7 @@ export async function openAgentRuntime(context: Context, options: OpenAgentRunti
 			events,
 			env: envManager,
 			mcp,
+			attachments,
 			workspaceDir,
 			model: ref,
 			roles,

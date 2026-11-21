@@ -28,7 +28,8 @@ One process is one bot: started by `npm run dev` in a checkout, or by `mason up`
   both halves share one container ([ADR-0016](adr/0016-one-container-is-not-a-tool-machine.md)). `~/.mason` itself is the
   root (`src/server/root.ts`): `common/` and one directory per bot.
 - **The prompt** is `src/server/prompt.ts` and only that file: every section, in reading order.
-- **Tools** are extensions (`src/server/extensions/`) plus the three per-boot ones, `subagent`, `mcp` and `codemode`.
+- **Tools** are extensions (`src/server/extensions/`) plus the four per-boot ones, `inbox`, `subagent`, `mcp` and
+  `codemode`.
 - **Hooks** (`src/server/hooks.ts`) are the ways a turn starts without a person: a timer, a fire, and the run
   supervisor's retry.
 

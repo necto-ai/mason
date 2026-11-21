@@ -13,7 +13,7 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import { ERROR_CODE } from "mason-protocol";
 import { WebSocketServer } from "ws";
 import { createRunAssets } from "./assets.ts";
-import { ATTACHMENT_LIMIT, AttachmentStore, displayName } from "./attachments.ts";
+import { ATTACHMENT_LIMIT, type AttachmentStore, displayName } from "./attachments.ts";
 import { CONNECTOR_PATH, type ConnectorDoor, createConnectorDoor } from "./connector.ts";
 import { authenticateConnector } from "./connectors.ts";
 import { currentHouse, type HousePaths } from "./house.ts";
@@ -29,12 +29,6 @@ export { type CommandTarget, commandTarget, runCommand } from "./commands.ts";
 export interface StartServerOptions extends OpenAgentRuntimeOptions {
 	readonly port?: number;
 	readonly hostname?: string;
-	/**
-	 * The asset store's bounds. Defaults are the protocol's (25 MiB, 90 days); a test that has to cross the cap or wait
-	 * for an expiry sets them small rather than writing 25 MB or sleeping 90 days.
-	 */
-	readonly attachmentBytes?: number;
-	readonly attachmentTtlMs?: number;
 }
 
 export interface RunningServer {
@@ -50,7 +44,13 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
 	// before the first one exists. A stack with no proxy in its environment is untouched, which is every stack with a
 	// direct route to its provider.
 	installEnvHttpProxy();
-	const runtime = await openAgentRuntime(BACKGROUND_CONTEXT, options);
+	// The store's retention is a deployment's number, so it is settled here where the environment is read: a caller that
+	// passed one wins, and an unset variable leaves the protocol's ninety days in place.
+	const ttlMs = options.attachmentTtlMs ?? envMilliseconds("MASON_ASSET_TTL_MS");
+	const runtime = await openAgentRuntime(BACKGROUND_CONTEXT, {
+		...options,
+		...(ttlMs === undefined ? {} : { attachmentTtlMs: ttlMs }),
+	});
 
 	// The supervisor re-arms a run that a provider outage killed; it reads the committed view only. One for the server,
 	// not one per object: it is a policy over the one shared conversation, and a copy per person would each fire its own
@@ -69,16 +69,11 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
 	// the one with the UI open. Fed from a connection instead, it observed nothing at all whenever nobody had a browser
 	// on the conversation, and a run that a provider killed stayed dead until somebody wrote again (2026-10-30: a bot's
 	// two messages sat unanswered for 3 and 12 hours while the log held no `[run-retry]` line at all).
-	// Uploaded bytes, a turn's files, and the ids that point at them. Durable, in the home's data half: a restart between
-	// an upload and the submission that references it is the moment a resend happens, and a row's asset outlives the
-	// process that stored it. Created before the watch, because the watch is what resolves a run's outbox.
+	// Uploaded bytes, a turn's files, and the ids that point at them: the boot's one store, durable in the home's data
+	// half. A restart between an upload and the submission that references it is the moment a resend happens, and a row's
+	// asset outlives the process that stored it. The watch resolves a run's outbox against it.
 	const house = currentHouse();
-	const ttlMs = options.attachmentTtlMs ?? envMilliseconds("MASON_ASSET_TTL_MS");
-	const attachments = new AttachmentStore({
-		dataDir: runtime.dataDir,
-		...(options.attachmentBytes === undefined ? {} : { maxBytes: options.attachmentBytes }),
-		...(ttlMs === undefined ? {} : { ttlMs }),
-	});
+	const attachments = runtime.attachments;
 	const runAssets = createRunAssets({
 		runtime,
 		store: attachments,
@@ -119,7 +114,6 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
 	// socket that arrives in the first instant finds the door it is admitted by.
 	const connectors = await createConnectorDoor({
 		runtime,
-		workspaceDir: runtime.workspaceDir,
 		attachments,
 		limiter: fires,
 		home: house.home,
@@ -239,7 +233,7 @@ async function handleRequest(
  * connector with the `user` grant. An event grant has no transcript, so an out asset is refused there.
  *
  * Authenticated as the connector (`authenticateConnector`), never as the owner, and answered with the protocol's own
- * statuses: `413` over the cap, `410` for an expired asset, `403` for a grant that does not read it, `405` for a wrong
+ * statuses: `413` over the cap, `410` for an expired or corrupt asset, `403` for a grant that does not read it, `405` for a wrong
  * verb, and `404` for an id or a path that is not there. The upload budget is the connector's attachment class, separate
  * from its submissions, fires and controls.
  */
@@ -294,6 +288,15 @@ async function handleConnectorRequest(
 			json(response, 410, {
 				code: ERROR_CODE.assetExpired,
 				message: "that asset has expired; the message it was attached to is still here",
+			});
+			return true;
+		}
+		// The bytes are not the bytes the sidecar recorded: a truncation or a replacement, refused rather than served
+		// short. `410` like an expiry, because the message survives its file and the id is what is gone.
+		if (read.status === "corrupt") {
+			json(response, 410, {
+				code: ERROR_CODE.assetCorrupt,
+				message: "that asset's bytes do not match what was stored; the message it was attached to is still here",
 			});
 			return true;
 		}
