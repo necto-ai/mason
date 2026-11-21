@@ -77,7 +77,7 @@ mason/
         │       ├── prompt.ts          # The whole system prompt: every section, in order, with its source
         │       ├── mcp.ts             # The live tool catalog: mcp_search, mcp_describe, mcp_call, mcp_read_resource
         │       ├── integrations.ts    # service/integrations.json: the services the agent reaches
-        │       ├── attachments.ts     # Content ids and bytes: the upload store and a turn's outbox
+        │       ├── attachments.ts     # Content ids and bytes: the upload store and the device inbox
         │       ├── limits.ts          # The budgets and caps every refusal names
         │       ├── untrusted.ts       # Fencing for data the model did not write
         │       ├── resident.ts        # The turn loop, the queue and the run supervisor's wiring
@@ -217,14 +217,14 @@ export interface EventHookConfig {
   - Uses `ModelRuntime.create({ allowModelNetwork: false })` from `@earendil-works/pi-coding-agent/src/core/model-runtime.ts` so `~/.pi/agent/auth.json` and `~/.pi/agent/models.json` work out of the box (defaults to `settings.json`'s `defaultProvider`/`defaultModel`, e.g. `opencode-go` / `deepseek-v4.1-flash`, or env `PI_PROVIDER` / `PI_MODEL`).
   - Also supports `PI_FAUX_MODEL=1` (using `fauxProvider` from `@earendil-works/pi-ai/providers/faux`) for deterministic offline testing and UI verification.
 - Calls `harness.resume()` on startup so any run interrupted by a crash or restart resumes automatically.
-- **The extension selection.** `BASE_EXTENSIONS` — `coding-tools`, `prompt`, `delivery` — is what every conversation gets, and three more are built per boot and installed alongside them: `mcp`, when an enabled integration has an MCP server, `codemode`, always, and `subagent`, the `delegate` tool. `prompt` is the only one with sections (§3.2). `delivery` is unconditional for every **person-facing** conversation: it carries the gates that decide whether a turn's reader hears anything and whether a long turn kept what it learned, so no conversation a person writes to may be without it. A task-owned child is not one: its selection is written explicitly in the creating commit, `coding-tools` alone, so both gates are absent by construction and its words reach the person only as the tool result. `mcp` is absent rather than empty when no entry has one, so a build with no integration has exactly the surface it had before MCP existed. What `mcp` installs does not depend on any server answering: four tools that read the live catalog and its docs (§4.1e), so a container that restarts, redeploys or redefines a tool moves nothing the prompt is built from. The three belong to the boot because each owns something that dies with the runtime: a lease directory and a child role (`subagent`), a socket per integration (`mcp`), and a QuickJS sandbox (`codemode`).
-- **The startup repair.** A stored selection that is an explicit list of names is used verbatim by `pi-durable` (`selectExtensions`), so a `pi.agent` doc written before a base extension existed leaves the conversation without it — and without `delivery` a turn has no way to reach the reader at all and no turn has the gate. On every open, `openAgentRuntime` therefore appends what that selection lacks — the base names in base order, then `subagent`, `mcp` when an entry has an MCP server, and `codemode` — in one commit, before `hooks.start()` and `harness.resume()`, so nothing can run against the stale selection. The stored order is kept and nothing is pruned; a selection stored as an edit (`{ add, remove }`) or left unset already unions with the base selection and is left exactly as it is; a selection that is already complete is not written to. The repair cannot tell a legacy doc from a deliberate narrowing of the selection, so it silently rewrites user state — that is the price of `delivery` being unconditional. It runs on the root only, which is why a child's narrowed selection stays narrowed.
+- **The extension selection.** `BASE_EXTENSIONS` — `coding-tools`, `prompt`, `delivery` — is what every conversation gets, and five more are built per boot and installed alongside them: `checkout` and `memory-check`, the turn's sync and memory rules, `mcp`, when an enabled integration has an MCP server, `codemode`, always, and `subagent`, the `delegate` tool. `prompt` is the only one with sections (§3.2). `delivery` is unconditional for every **person-facing** conversation: it carries the gates that decide whether a turn's reader hears anything and whether a long turn kept what it learned, so no conversation a person writes to may be without it. A task-owned child is not one: its selection is written explicitly in the creating commit, `coding-tools` alone, so both gates are absent by construction and its words reach the person only as the tool result. `mcp` is absent rather than empty when no entry has one, so a build with no integration has exactly the surface it had before MCP existed. What `mcp` installs does not depend on any server answering: four tools that read the live catalog and its docs (§4.1e), so a container that restarts, redeploys or redefines a tool moves nothing the prompt is built from. They belong to the boot because each owns something that dies with the runtime: a checkout, lease, child role, socket and sandbox.
+- **The startup repair.** A stored selection that is an explicit list of names is used verbatim by `pi-durable` (`selectExtensions`), so a `pi.agent` doc written before a base extension existed leaves the conversation without it — and without `delivery` a turn has no way to reach the reader at all and no turn has the gate. On every open, `openAgentRuntime` therefore appends what that selection lacks — the base names in base order, then `checkout`, `memory-check`, `subagent`, `mcp` when an entry has an MCP server, and `codemode` — in one commit, before `hooks.start()` and `harness.resume()`, so nothing can run against the stale selection. The stored order is kept and nothing is pruned; a selection stored as an edit (`{ add, remove }`) or left unset already unions with the base selection and is left exactly as it is; a selection that is already complete is not written to. The repair cannot tell a legacy doc from a deliberate narrowing of the selection, so it silently rewrites user state — that is the price of `delivery` being unconditional. It runs on the root only, which is why a child's narrowed selection stays narrowed.
 - **The harness settings.** `followUpMode: "all"`: queued follow-ups drain as one turn, because the model prioritises between them and nothing here can rank a fired hook against a wish the reader typed. `steeringMode: "one-at-a-time"`: one queued steer is placed per boundary, so a burst of chat messages reaches the running turn one at a time instead of all at once, and a steer never preempts a tool call that has already started. `stream.cacheRetention: "long"`: an always-on agent idles past the provider's five-minute cache window constantly, and the long retention is what stops every wake-up from re-paying for the whole prefix (§3.5).
 - **The roles.** `roles` in `common/settings.json` maps `main` and `subagent` to a provider, a model id and a thinking level. `main` runs the model the boot resolved — the bot's file, then the map, then the common default, then `PI_PROVIDER`/`PI_MODEL` — and the map decides only how far it thinks. Absent, `main` takes that model at `high` and `subagent` Decision 8's child at `max`, or the resolved model at `off` where the catalog cannot serve it. A level the model does not offer is refused at boot naming the ones it does; an unknown provider is skipped, an unknown model under a known one is refused (`validateRoles` in `src/server/runtime.ts`). The boot writes the main role into the root's `pi.agent` — model and thinking together, one record per conversation — and `delegate` writes the subagent role into the child's in the commit that creates it. That record is the run record: it is what each request reads, and a boot that agrees with it writes nothing.
 - **Delegation.** `delegate` (`src/server/extensions/subagent.ts`) is one foreground child conversation owned by the tool call's task, created inside its commit and found before it is created: the task's memo names it, and a scan of the conversations the task owns covers a crash between the creation and the memo. The child is configured with the `subagent` role, `maxTurns` of eight, the worker brief as `instructions` instead of the persona, and the explicit selection above; one input is submitted with the call's request id, so a re-execution after a restart returns the submission already made. The call is `replay: "safe"`, which is what makes that re-execution reuse rather than duplicate. A wall clock — mason's, because no vendor API declares a run deadline — races the wait, and a child past it is aborted, which settles its run and leaves no task behind. A read-only child gets `read` alone; a writer needs `checkout` and holds that checkout's write lease for its run (`src/server/lease.ts`), refused rather than queued to a second writer on the same checkout and released at settlement, so an implement-then-review pass is never blocked. The answer comes back as the tool result; the parent is what sends it.
-- **The workspace.** A conversation's `cwd` defaults to `~/.mason/agent/workspace`, created by `ensureHouse`, not to `process.cwd()`: the agent works in its own directory, not in the program that runs it.
+- **The workspace.** A conversation's `cwd` defaults to the home the tools see on a device (`/home/<bot>`), or its `workspace/` locally — not to `process.cwd()`: the agent works in its own directory. `workspace/` is its sibling, created by `ensureHouse`.
 - **The agent's home.** `housePaths()` resolves a home from an explicit path, else `MASON_HOME`, else `~/.mason`; `openAgentRuntime` resolves it once from `houseHome` and configures it for the prompt sections, which are installed at import time and cannot be handed arguments (§3.5).
-- **The reflection gate.** The same extension carries a second gate over the same plumbing: a turn has two endings, and both are about what it leaves behind. `beforeRequest` counts the turn's tool rounds (the assistant messages that carried a call after the newest input a person or a fire wrote, so a gate's own continuation is stepped over rather than taken for a new turn) and memoizes the moment it reaches ten; `onYield` continues the run once with `REFLECTION_ASK` (`src/shared/contract.ts`), asking for what was learned into `agent/profile.md`, one dated log line, and a skill only when a procedure repeated. The count survives the delivery reminder, because a count that restarted would ask only the turns nobody had to rescue. The ask is a `pi.user` entry: the projection drops it, and the origin read is the run's pointer rather than a text scan. Its guards are words: what code enforces is the tool machine's mount, which makes `agent/` writable and `service/soul.md` not (ADR 0013: no gateway, no approval).
+- **The reflection gate.** The same extension carries a second gate over the same plumbing: a turn has two endings, and both are about what it leaves behind. `beforeRequest` counts the turn's tool rounds (the assistant messages that carried a call after the newest input a person or a fire wrote, so a gate's own continuation is stepped over rather than taken for a new turn) and memoizes the moment it reaches ten; `onYield` continues the run once with `REFLECTION_ASK` (`src/shared/contract.ts`), asking for what was learned into `agent/profile.md`, one dated log line, and a skill only when a procedure repeated. The count survives the delivery reminder, because a count that restarted would ask only the turns nobody had to rescue. The ask is a `pi.user` entry: the projection drops it, and the origin read is the run's pointer rather than a text scan. Its guards are words: what code enforces is a device with no `service/` and a checkout whose ignore line refuses it, which makes `agent/` writable and `service/soul.md` not (ADR 0013: no gateway, no approval).
 - **The delivery gate.** What the model writes is the message, so no call's absence loses it, but a submission turn can still end with no text, and the reader sees silence. The `delivery` extension therefore carries a `GenerationTask` `onYield` hook. `onYield` sees the turn's final answer and asks whether it wrote anything; when it did not, the run continues once with `DELIVERY_REMINDER` from `src/shared/contract.ts`. The turn's kind comes from `pi.live.run.first`, the run's first placed entry: a submission entry (`pi.user`, `app.connector`) owes the reader a message, and a hook or event entry may stay silent. No entry kind is scanned and no text searched, so a compaction cannot become the input (#199); a run with no `first` is a local turn and is not scanned for one. The reminder is a `pi.user` entry, and `isDeliveryReminder()` is what the projection reads to drop it; a person's own line that only opens with the marker is not one, so nothing anybody typed leaves their transcript. Once per turn, memoised: a second silent answer becomes one `notice` — "The agent finished without writing you a message." — because a turn the reader cannot interpret is worse than one that admits failure (§4.1a).
 
 ### 3.5 `~/.mason/` — The Agent's Home
@@ -233,16 +233,16 @@ Everything the agent is made of is a file Denis can read, diff and revert, in on
 
 ```text
 ~/.mason/
-├── agent/                  # Given to the tool machine at this same absolute path (ADR 0002)
+├── agent/                  # The agent's memory: the host's repository, and the device's checkout (ADR 0002)
 │   ├── profile.md          # Who Denis is: agent-managed, resident, capped, read through the execution environment
-│   ├── log/2026-10-20.md   # Dated facts, one per line, written with `write` on the tool machine
+│   ├── log/2026-10-20.md   # Dated facts, one per line, written with `write` on the device
 │   ├── journal/            # Where the daily journal will be written
 │   ├── skills/<name>/SKILL.md  # Denis's own skills, and the shipped ones seeded here on first boot
 │   ├── events.json         # The events and routines the agent lets wake it (§3.3)
 │   ├── agents/             # Worker definitions, beside skills so `write` can edit them
-│   ├── workspace/          # The directory the agent works in; not the repo that runs it
-│   └── .git                # The home's repository: the agent's memory and its history
-└── service/                # Sibling of agent/, not inside it
+│   └── .git                # The history: bundles carry it to `~/agent` on the device
+├── workspace/              # Scratch and output, beside the memory: a half-written file is not a memory commit
+└── service/                # Sibling of agent/, never a path on the device
     ├── soul.md             # The first section of the system prompt: the agent's own voice
     ├── config.json         # The connector credentials, as hashes, one per entry (§4.1b)
     ├── integrations.json   # Operator wiring: each entry's MCP server and connector grant, read once at boot
@@ -251,30 +251,29 @@ Everything the agent is made of is a file Denis can read, diff and revert, in on
     └── data/               # agent.sqlite, routines-state.json, seeded-skills.json (§4.1c)
 ```
 
-**The boundary is a mount, and a deployment is what makes it.** The repository ships one shape: the halves are sibling
-directories on one filesystem, and a tool that can read one can read the other. A deployment that mounts `agent/` and not
-`service/` makes the split meaningful — the tool machine has no `service/`, so `bash` cannot reach the connector
-credentials, the database, the SSH key or the provider credential, for every tool, not only policy-honouring ones.
-`docker/` runs both halves in one container, for tests and demos only
-([ADR-0016](adr/0016-one-container-is-not-a-tool-machine.md)). `service/` is unversioned. `agent/.git` is the memory
-repo, created when the home is first opened, and a home from before the split is refused at boot rather than migrated.
+**The boundary is a device, and the checkout is what crosses it.** The repository ships one shape: the halves are
+sibling directories on one filesystem. A deployment dials a device whose only mason path is `~/agent` — the tool machine has no `service/`, so `bash` cannot reach the connector
+credentials, the database, the SSH key or the provider credential, for every tool. The
+memory crosses as git bundles over the pi-env channel: the host's tip is fetched into the checkout at turn start, and
+its commits are validated and fast-forwarded back after (`src/server/checkout.ts`). `docker/` runs both halves in one
+container, for tests and demos only ([ADR-0016](adr/0016-one-container-is-not-a-tool-machine.md)). `service/` is
+unversioned. `agent/.git` is the memory repo, created when the home is first opened, and a home from before the split
+is refused at boot rather than migrated.
 
 The home is `0700` and so is every directory in it; `soul.md`, `config.json`, `integrations.json` and
-`agent.sqlite` are `0600`. It holds a transcript of everything Denis said, which is not a thing to leave readable by
-every other account on the machine.
+`agent.sqlite` are `0600`: the home holds his transcript.
 
 `integrations.json` is operator wiring: an MCP server that lends tools, a connector grant that names the event kinds it
 may send, and whether the entry is on. It is read once at boot, because the tool list and the prompt section are decided
 there and a list that changed under a running turn would re-price the prefix. What wakes the bot is not here: it is
 `agent/events.json`, which the agent edits.
 
-The skills walk is one accepted deviation from the rest of this section: it reads symbolic links as nothing (a link is
-skipped rather than followed) and it does not honour a `.gitignore` inside `agent/skills/`, so a skill kept out of the
-memory repo by an ignore rule is still indexed.
+The skills walk skips symbolic links rather than following them, and does not honour a `.gitignore` inside
+`agent/skills/`: a skill kept out of the memory repo by an ignore rule is still indexed.
 
 `src/server/house.ts` owns the layout and every read and write; nothing else builds a path by hand, with one
-acknowledged exception — `configPath` in `auth.ts`, which predates the rule and keeps `readConfig`/`writeConfig` taking
-a home rather than a path.
+acknowledged exception — `configPath` in `auth.ts`, which keeps `readConfig`/`writeConfig` taking a home rather than a
+path.
 Opening the runtime creates the home if it is missing — `log/`, `skills/`, and `soul.md` from `DEFAULT_SOUL`, written
 once and never overwritten — seeds the skills mason ships into `agent/skills/` (a name that already exists is left
 alone), and initialises `agent/` as a git repository, so a memory write is a commit Denis can revert. A home from
@@ -318,7 +317,7 @@ wins over it.
 `- HH:MM — <fact>` under a `# YYYY-MM-DD` heading, and `write` is what puts them there: there is no memory tool to learn
 and no store to query. `agent/` is a git repository, so a fact is a change the person can read and revert, and the
 agent reads its own history with `read` when it needs it. That is the whole memory: markdown in the half of the home the
-tool machine mounts.
+device's checkout carries.
 
 **The cache policy.** The harness sets `stream.cacheRetention: "long"`, because an always-on agent idles past the
 provider's five-minute window constantly and would otherwise re-pay for the whole prefix on every wake-up. What makes
@@ -510,8 +509,9 @@ raises an event; there is no append that writes a row of its own.
 Every append is deduplicated durably: both are claimed by request id (`:submission:`, `:fire:`), and an event also by
 the event log, because an absent routine makes no entry. A resend is answered `{"outcome": "duplicate"}` and creates no
 second operation, before or after a restart. Content is typed blocks: text and markdown become the message
-unprefixed, and a file block is read from the attachment store and written into the agent's `workspace/inbox/`, with
-images also passed as image blocks.
+unprefixed, and a file block is identity only — id, name, type, size, and a line naming `~/inbox/<contentId>/<name>`;
+the turn's first request (`src/server/inbox.ts`) lands the files through the execution environment and inlines an image
+inside pi's ceiling. Submit writes nothing.
 
 **One message path, and the conversation is the delivery.** The agent's text is the message: every assistant generation
 that wrote something is a `delivered` row of the `conversation` state, and every client with the `user` grant reads it
@@ -522,17 +522,19 @@ entry as provenance, and no row carries it. The SDK offers the split as `createU
 the same socket and credential class; the combined factory is internal.
 
 **Assets.** `POST /api/connector/attachments` (raw body, `content-type`, `x-mason-filename`) stores a person's upload
-under a content id and answers `{contentId, size, expiresAt}`. A turn's deliverable is written under `out/`, linked as
-`file:out/<path>` or simply left there; after the run `src/server/assets.ts` resolves the real path under `out/`, refuses
-a symlink, an escape, a `service/` path or a file over 25 MiB, stores the bytes and rewrites the link to `asset:<id>`.
-The store is `service/data/attachments/<connector>/` and `.../.out/`, durable because a restart between an upload and the
-submission that references it is the moment a resend happens. A user or agent row carries `assets?: AssetRef[]`
-(`{id, name, mimeType, size}`); `GET /api/connector/assets/<id>` serves the bytes to the uploader or to a connector with
-the `user` grant, with the stored type and a `Content-Disposition`. An event grant is `403`, an id that is gone is `404`,
+under a content id and answers `{contentId, size, expiresAt}`. A turn's deliverable is written under `workspace/out/` and linked in
+the message — `[name](workspace/out/name.ext)`, or the older `file:out/<path>` — and after the run `src/server/assets.ts` resolves
+the real path under `out/`, refuses a symlink, an escape, a `service/` path or a file over 25 MiB, stores the bytes and
+rewrites the link to `asset:<id>`. A file the message never links is not attached. The store is
+`service/data/attachments/<connector>/` and `.../.out/`, durable because a restart between an upload and the submission
+that references it is the moment a resend happens; its sidecar records a sha256, and a mismatch is a refusal, never short
+bytes. A user or agent row carries `assets?: AssetRef[]` (`{id, name, mimeType, size}`); a user row's is what the message
+links. `GET /api/connector/assets/<id>` serves the bytes to the uploader or to a connector with the `user` grant, with the
+stored type and a `Content-Disposition`. An event grant is `403`, an id that is gone is `404`,
 and retention is 90 days by default (`MASON_ASSET_TTL_MS`, in milliseconds): an expired asset is `410` for one further
-window, then `404`, and its message stays. Per turn: 10
-assets, 25 MiB each, 100 MiB total. Over the upload cap is `413`, and the id never reaches the filesystem unless it
-matches `cnt_<32 hex>`.
+window, then `404`, and its message stays; corrupt bytes are `410 mason.asset_corrupt`. Per turn: 10 assets, 25 MiB
+each, 100 MiB total. Over the upload cap is `413`, and the id never reaches the filesystem unless it matches
+`cnt_<32 hex>`.
 
 **Budgets.** Appends (60, of which events are 6), controls (6, with `stop` in a class of its own) and attachments (30) are
 counted separately per connector, in the process's sliding-window limiter (`src/server/limits.ts`), keyed per connector

@@ -77,7 +77,7 @@ async function main(): Promise<number> {
 
 	const workspace = process.env.PI_ENV_SSH_WORKSPACE;
 	const manager: ExecutionTargetManager = createRuntimeEnvManager({
-		workspaceDir: workspace ?? ".",
+		cwd: workspace ?? ".",
 		ssh,
 		onLog: (text) => console.log(`prove:ssh-env: pi-env ${text.trimEnd()}`),
 	});

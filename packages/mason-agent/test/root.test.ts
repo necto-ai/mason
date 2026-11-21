@@ -14,6 +14,7 @@ import { INIT, NEW } from "../src/server/command-line.ts";
 import {
 	botHome,
 	expandHome,
+	HOME_ENTRIES,
 	readRoot,
 	refuseHomeEnv,
 	refuseLegacyRoot,
@@ -161,6 +162,10 @@ describe("the paths", () => {
 	test("a root command refuses MASON_HOME, because a home is not a root", () => {
 		assert.doesNotThrow(() => refuseHomeEnv({}));
 		assert.throws(() => refuseHomeEnv({ MASON_HOME: "/home/x/.mason" }), /MASON_HOME names one home/);
+	});
+
+	test("workspace is not a legacy home entry: it is a sibling of agent/, not a half's name", () => {
+		assert.ok(!HOME_ENTRIES.includes("workspace"));
 	});
 
 	test("refuseLegacyRoot is quiet on an empty or a real root", async () => {

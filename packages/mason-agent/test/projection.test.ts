@@ -113,7 +113,11 @@ describe("the transcript the client is sent", () => {
 					kind: CONNECTOR_ENTRY_KIND,
 					model: [{ role: "user", content: "read the note" }],
 					data: {
-						assets: [{ id: "cnt_a", name: "note.txt", mimeType: "text/plain", size: 12 }],
+						assets: [
+							{ id: "cnt_a", name: "note.txt", mimeType: "text/plain", size: 12 },
+							// A directory name is a file on disk, and the transcript shows the id instead.
+							{ id: "cnt_c", name: "..", mimeType: "text/plain", size: 3 },
+						],
 					},
 				},
 			]),
@@ -123,7 +127,10 @@ describe("the transcript the client is sent", () => {
 				kind: "user",
 				id: "2",
 				text: "read the note",
-				assets: [{ id: "cnt_a", name: "note.txt", mimeType: "text/plain", size: 12 }],
+				assets: [
+					{ id: "cnt_a", name: "note.txt", mimeType: "text/plain", size: 12 },
+					{ id: "cnt_c", name: "cnt_c", mimeType: "text/plain", size: 3 },
+				],
 			},
 		]);
 		assert.ok(!JSON.stringify(transcript).includes("inbox/"), "the row names an id, not the path the agent read");
@@ -151,6 +158,17 @@ describe("the transcript the client is sent", () => {
 				assets: [{ id: "cnt_b", name: "report.md", mimeType: "text/markdown", size: 40 }],
 			},
 		]);
+	});
+
+	it("carries no asset for a file the message never links", () => {
+		const transcript = projectTranscript(
+			viewOf([assistant(1, [{ type: "text", text: "Done. The report is in out/." }], { stopReason: "stop" })]),
+		);
+		assert.deepEqual(transcript, [{ kind: "delivered", id: "message:1", text: "Done. The report is in out/." }]);
+		assert.ok(
+			!JSON.stringify(transcript).includes("assets"),
+			"the array is exactly the text's links, and there are none",
+		);
 	});
 
 	it("leaves a refused link as text and adds one notice", () => {

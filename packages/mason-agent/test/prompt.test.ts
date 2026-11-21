@@ -153,8 +153,10 @@ test("the whole prompt fits in its budget, and the tool list is the six", async 
 	// it is the wrong tool, that a worker cannot reach the person, and that a change is written and *then* reviewed.
 	// 5,600 became 5,700 when the integration contract (#222) put the tool count and docs pointer on each integration
 	// line, and the docs index learned a service's markdown resources: the resident prefix grew, which is the trade the
-	// contract chose, and the merged prompt is 5,641. 5,700 became 6,000 for the outbox rule (#225): a deliverable goes
-	// in `out/`, a link is `file:out/...`, and nothing else is attached, which the model cannot infer from the tool list.
+	// contract chose, and the merged prompt is 5,641. 6,000 was the outbox rule (#225), four sentences of it; #235 cut
+	// that to one — a link is `out/...`, and a file reaches the reader only if the message links it — and the ceiling
+	// followed it down to 5,900. #237 moved the tools' cwd to the device home, so the rule now spells the workspace above
+	// the outbox (`workspace/out/...`), and the merged prompt is 5,870.
 	await withHouseHome(async () => {
 		// The module's integrations are global: a test that set some would otherwise be counted here.
 		setIntegrations({});
@@ -162,7 +164,7 @@ test("the whole prompt fits in its budget, and the tool list is the six", async 
 		for (const promptSection of PROMPT_SECTIONS) {
 			total += (await renderSection(promptSection))?.length ?? 0;
 		}
-		assert.ok(total <= 6_000, `the prompt is ${total} characters, over its 6,000`);
+		assert.ok(total <= 5_900, `the prompt is ${total} characters, over its 5,900`);
 	});
 
 	const declared = BASE_EXTENSIONS.flatMap((extension) => (extension.tools ?? []).map((tool) => tool.name));
@@ -759,6 +761,20 @@ test("the integrations section renders the same bytes twice, and equally for a r
  * because the eval suite measured that position: a fact recalled in a later turn was delivered 0/2 times when the rule
  * sat fourth. So everything added since — integrations, code mode — sits between them.
  */
+test("the delivery rule names workspace/out/ in one sentence, and the retired file: spelling is gone", async () => {
+	const text = (await renderSection(sectionOf("delivery"))) ?? "";
+	assert.match(
+		text,
+		/\[name\]\(workspace\/out\/name\.ext\)/,
+		"a link names the outbox under the workspace, which is what the resolver reads",
+	);
+	assert.match(
+		text,
+		/a\s+file reaches them only if the message links it, and nothing outside `workspace\/out\/` can be linked/,
+	);
+	assert.doesNotMatch(text, /file:out/, "the invented file: protocol is not taught any more");
+});
+
 test("the prompt opens with the soul and closes with the delivery rule", () => {
 	const keys = promptSectionKeys();
 	assert.equal(keys[0], "preamble", "the soul opens the prompt");

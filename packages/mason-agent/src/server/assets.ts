@@ -1,15 +1,14 @@
 /**
  * The outbox: a turn's files, resolved after the run that wrote them.
  *
- * A turn produces a file by writing it under `agent/workspace/out/` and naming it with a `file:out/<path>` link. After
- * the run, this module reads the answer's links, stores the bytes, and maps each link to `asset:<id>`; it also walks
- * `out/` for a file written during the run that the answer never linked, so a deliverable cannot be lost by forgetting
- * the link.
+ * A turn produces a file by writing it under `out/` in its workspace and linking it in the message. After the run, this
+ * module reads the answer's links, stores the bytes and maps each link to `asset:<id>`. Nothing is scanned for: a file
+ * in `out/` that the message never names is not delivered, because a message is what says a file is for the reader.
  *
- * The rules are deliberately narrow. Only `file:out/` is a link this reads: arbitrary Markdown is not a contract, and a
- * web page, an absolute path and `agent/profile.md` are all things a model can type. A path is resolved through
- * `canonicalPath` and must stay under `out/`, a symlink is refused rather than followed, and the per-turn caps are
- * checked before a byte is stored.
+ * The rules are deliberately narrow. A link is a relative markdown target under `out/` — `file:` in front of it is the
+ * older spelling and is stripped — and everything else a model can type stays text: a web page, an anchor, an absolute
+ * path, `agent/profile.md`. A path is resolved through `canonicalPath` and must stay under `out/`, a symlink is refused
+ * rather than followed, and the per-turn caps are checked before a byte is stored.
  *
  * The result is one `app.asset` entry per answered run, naming the row it decorates and only content ids. The projection
  * merges it into the row; nothing here writes a row of its own, and nothing here names a path on the wire.
@@ -35,6 +34,16 @@ import { liveOf } from "./status.ts";
 /** The output directory, relative to the workspace the tools run in. */
 export const OUTBOX = "out";
 
+/**
+ * The workspace's own name, which a link may carry: the tools' cwd is the home above it (`runtime.ts`), so a message
+ * written from there spells `workspace/out/name.ext`, and one written from inside the workspace spells `out/name.ext`.
+ * Both name the same directory, and the workspace is what the resolver joins them against.
+ */
+export const WORKSPACE = "workspace";
+
+/** The two spellings a link may use for the outbox, each with its trailing slash. */
+const OUTBOX_TARGETS: readonly string[] = [`${OUTBOX}/`, `${WORKSPACE}/${OUTBOX}/`];
+
 /** What one turn may attach. A test narrows these; a deployment runs the defaults. */
 export interface TurnAssetLimits {
 	readonly maxAssets: number;
@@ -56,7 +65,7 @@ export interface AssetEntryData {
 	readonly rowId: string;
 	readonly entryId: string;
 	readonly assets: AssetRef[];
-	/** Original `file:out/...` target to the `asset:<id>` that replaced it. */
+	/** The target as the message wrote it (without a `file:` prefix), to the `asset:<id>` that replaced it. */
 	readonly links: Record<string, string>;
 	readonly notice?: string;
 }
@@ -71,8 +80,6 @@ export interface TurnAssetsInput {
 	/** The assistant entry the row was projected from, for idempotence. */
 	readonly entryId: string;
 	readonly text: string;
-	/** When the run started, in wall-clock milliseconds: a file older than this was not written by the turn. */
-	readonly startedAt?: number;
 	readonly limits?: Partial<TurnAssetLimits>;
 	readonly context?: Context;
 }
@@ -80,8 +87,8 @@ export interface TurnAssetsInput {
 /**
  * Resolve one answered run into an asset record, or `undefined` when it produced nothing to carry.
  *
- * `text` is the message the reader sees, which is where the links are. The scan is not conditional on a link: a file
- * written during the turn is attached even if the answer forgot to mention it.
+ * `text` is the message the reader sees, which is where the links are. A file the message never links is not a
+ * deliverable: the array is exactly the text's links, and a reader who was not told about a file was not given one.
  */
 export async function resolveTurnAssets(input: TurnAssetsInput): Promise<AssetEntryData | undefined> {
 	const context = input.context ?? BACKGROUND_CONTEXT;
@@ -116,28 +123,18 @@ export async function resolveTurnAssets(input: TurnAssetsInput): Promise<AssetEn
 		return undefined;
 	};
 
-	for (const target of fileLinks(input.text)) {
-		const relative = outPathOf(target);
-		if (relative === undefined) {
+	for (const link of outboxLinks(input.text)) {
+		if (link.relative === undefined) {
 			refused = true;
 			continue;
 		}
 		if (capped) continue;
-		const path = join(outDir, relative);
+		const path = join(outDir, link.relative);
 		const canonicalPath = await canonical(input.env, path, context);
 		const already = canonicalPath === undefined ? undefined : stored.get(canonicalPath);
-		const ref = already ?? (await keep(path, relative));
+		const ref = already ?? (await keep(path, link.relative));
 		if (ref === undefined) continue;
-		links[target] = `asset:${ref.id}`;
-	}
-
-	if (!capped && canonicalOut !== undefined && input.startedAt !== undefined && assets.length < limits.maxAssets) {
-		for (const file of await wroteDuring(input.env, outDir, input.startedAt, context)) {
-			if (capped) break;
-			const canonicalPath = await canonical(input.env, file.path, context);
-			if (canonicalPath !== undefined && stored.has(canonicalPath)) continue;
-			await keep(file.path, basename(file.path));
-		}
+		links[link.target] = `asset:${ref.id}`;
 	}
 
 	if (assets.length === 0 && Object.keys(links).length === 0 && !refused && !capped) return undefined;
@@ -243,26 +240,53 @@ async function canonical(env: ExecutionEnv, path: string, context: Context): Pro
 	return result.ok ? result.value : undefined;
 }
 
-/** Every `file:` link in the message. A web link is not one, and an image's `!` is irrelevant to the target. */
-function fileLinks(text: string): string[] {
-	const targets: string[] = [];
-	for (const match of text.matchAll(/\[[^\]\n]*\]\(([^)\s]+)\)/g)) {
-		const target = match[1];
-		if (target?.startsWith("file:") === true) targets.push(target);
-	}
-	return targets;
+/** One markdown link this reads: the target as written (without a `file:` prefix), and the path under `out/` it names. */
+interface OutboxLink {
+	readonly target: string;
+	/** `undefined` when the link named a delivery attempt this turn may not carry (`file:` outside `out/`). */
+	readonly relative?: string;
 }
 
 /**
- * The path under `out/` a link names, or `undefined` when it is not one this turn may attach.
+ * Every markdown target that names a file under `out/`.
  *
- * Only a relative path is accepted. `service/`, an absolute path, a parent segment and a Windows drive are refused
- * before the filesystem sees them; the canonical check after this is what refuses a symlink that stays inside `out/`.
+ * `file:` in front of a target is the older spelling and is stripped, so a message written for the previous build still
+ * resolves. A `file:` target outside `out/` is a delivery attempt and is refused, which is the notice the row carries;
+ * a plain web link, an anchor or a path to the agent's own files is prose, and this does not read it.
+ */
+function outboxLinks(text: string): OutboxLink[] {
+	const links: OutboxLink[] = [];
+	for (const match of text.matchAll(/\[[^\]\n]*\]\(([^)\s]+)\)/g)) {
+		const written = match[1];
+		if (written === undefined) continue;
+		const wasFile = written.startsWith("file:");
+		const target = wasFile ? written.slice("file:".length) : written;
+		const relative = outPathOf(target);
+		// A plain link is a delivery attempt only when it names the outbox, under either spelling; a `file:` target is one
+		// whatever it names, because that is what the older prompt taught. Everything else in a message is prose. A target
+		// that names the outbox and escapes it stays a delivery attempt with no path, so the row carries the refusal.
+		if (!wasFile && !OUTBOX_TARGETS.some((prefix) => target.startsWith(prefix))) continue;
+		links.push({ target, ...(relative === undefined ? {} : { relative }) });
+	}
+	return links;
+}
+
+/**
+ * The path under `out/` a target names, or `undefined` when it is not one this turn may attach.
+ *
+ * Only a relative path is accepted, spelled `out/…` or `workspace/out/…`: the tools' cwd is the home above the workspace,
+ * so a message written there names the workspace. An absolute path, a parent segment, a Windows drive and a control
+ * character are refused before the filesystem sees them; the canonical check after this is what refuses a symlink that
+ * stays inside `out/`.
  */
 function outPathOf(target: string): string | undefined {
-	const rest = target.slice("file:".length);
-	if (!rest.startsWith(`${OUTBOX}/`)) return undefined;
-	const relative = rest.slice(OUTBOX.length + 1);
+	const under = target.startsWith(`${WORKSPACE}/${OUTBOX}/`)
+		? target.slice(WORKSPACE.length + OUTBOX.length + 2)
+		: target.startsWith(`${OUTBOX}/`)
+			? target.slice(OUTBOX.length + 1)
+			: undefined;
+	if (under === undefined) return undefined;
+	const relative = under;
 	if (relative === "" || relative.startsWith("/") || relative.includes("\\") || relative.includes(":")) {
 		return undefined;
 	}
@@ -270,28 +294,6 @@ function outPathOf(target: string): string | undefined {
 	if (parts.some((part) => part === "" || part === "." || part === "..")) return undefined;
 	if (/[\u0000-\u001f\u007f]/.test(relative)) return undefined;
 	return relative;
-}
-
-/** The regular files below `out/` whose mtime is at or after the run's start. Symlinks are not followed. */
-async function wroteDuring(
-	env: ExecutionEnv,
-	outDir: string,
-	startedAt: number,
-	context: Context,
-): Promise<FileInfo[]> {
-	const found: FileInfo[] = [];
-	const walk = async (directory: string, depth: number): Promise<void> => {
-		if (found.length >= 500 || depth > 8) return;
-		const listed = await env.listDir(directory, context);
-		if (!listed.ok) return;
-		for (const entry of listed.value) {
-			if (found.length >= 500) return;
-			if (entry.kind === "directory") await walk(entry.path, depth + 1);
-			else if (entry.kind === "file" && entry.mtimeMs >= startedAt) found.push(entry);
-		}
-	};
-	await walk(outDir, 0);
-	return found;
 }
 
 /** The type a file is served as, from its name: a small table rather than a dependency for the common deliverables. */
@@ -418,7 +420,6 @@ export function createRunAssets(options: {
 				rowId: row.id,
 				entryId,
 				text: row.text,
-				startedAt: await runStartedAt(options.runtime, entries, ended, nextFirst),
 				...(options.limits === undefined ? {} : { limits: options.limits }),
 			});
 		} catch (error) {
@@ -448,36 +449,6 @@ export function createRunAssets(options: {
 		observe,
 		idle: () => queue,
 	};
-}
-
-/**
- * When the run started writing, as the earliest task that appended one of its assistant or tool entries.
- *
- * `pi.live.run.taskId` is the run's *last* generation, stamped after the tool rounds that write deliverables, so its
- * `startedAt` is not the cutoff. The entries carry the task that made them; the tool task's start is before the file it
- * wrote. The input entry's own task is excluded: a queued submission may have started long before its turn.
- */
-async function runStartedAt(
-	runtime: AgentRuntime,
-	entries: readonly EntryRecord[],
-	ended: { readonly taskId: number; readonly first?: number; readonly observedAt: number },
-	nextFirst: number | undefined,
-): Promise<number> {
-	const from = ended.first ?? -1;
-	const to = nextFirst ?? Number.POSITIVE_INFINITY;
-	const ids = new Set<number>([ended.taskId]);
-	for (const entry of entries) {
-		if (Number(entry.id) <= from || Number(entry.id) >= to) continue;
-		if (entry.kind !== "pi.assistant" && entry.kind !== "pi.tool-result") continue;
-		if (entry.byTaskId !== undefined) ids.add(Number(entry.byTaskId));
-	}
-	let earliest: number | undefined;
-	for (const id of ids) {
-		const task = await runtime.harness.getTask(id as never, BACKGROUND_CONTEXT);
-		if (task?.startedAt === undefined) continue;
-		earliest = earliest === undefined ? task.startedAt : Math.min(earliest, task.startedAt);
-	}
-	return earliest ?? ended.observedAt;
 }
 
 /** The text of an assistant entry: a plain string, or its text blocks joined. */

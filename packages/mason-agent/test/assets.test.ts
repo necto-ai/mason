@@ -7,23 +7,28 @@
  * needs to get the bytes back.
  */
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { Connection, LocalExecutionEnv, localDaemon } from "@earendil-works/pi-env";
 import { resolveTurnAssets } from "../src/server/assets.ts";
-import { AttachmentStore } from "../src/server/attachments.ts";
+import { AttachmentStore, attachmentPath } from "../src/server/attachments.ts";
 import { daemonCommand } from "../src/server/env.ts";
 import { connectConnector, connectorHome, serveConnector, until } from "./support/connector.ts";
 
 const directories = new Set<string>();
+/** The device's home: `~` is where the inbox goes, and a test does not write into the developer's own home. */
+const deviceHome = await mkdtemp(join(tmpdir(), "mason-device-home-"));
+process.env.HOME = deviceHome;
 const connection = new Connection({ command: daemonCommand(localDaemon()) });
 const env = new LocalExecutionEnv({ connection, cwd: tmpdir() });
 
 after(async () => {
 	connection.close();
+	await rm(deviceHome, { recursive: true, force: true });
 	for (const directory of directories) await rm(directory, { recursive: true, force: true });
 });
 
@@ -78,16 +83,33 @@ describe("the asset store", () => {
 			"the old id is no longer even a 410",
 		);
 	});
+
+	it("refuses bytes that are not the bytes it recorded, instead of answering them", async () => {
+		const dataDir = await temp("mason-assets-corrupt-");
+		const store = new AttachmentStore({ dataDir });
+		const saved = await store.save("telegram", Buffer.from("the brief, in full"), { name: "brief.txt" });
+		assert.ok(saved !== undefined);
+		const stored = join(dataDir, "attachments", "telegram", saved.contentId);
+
+		// A replacement of the same length: the sha256 is what tells it apart from the sender's file.
+		await writeFile(stored, "the brief, in fulL");
+		assert.equal((await store.read("telegram", saved.contentId)).status, "corrupt");
+
+		// A truncation: short bytes are a refusal, never what a reader gets back.
+		await writeFile(stored, "the brief");
+		assert.equal((await store.read("telegram", saved.contentId)).status, "corrupt");
+	});
 });
 
 describe("the post-turn resolver", () => {
-	it("stores a linked file, attaches an unlinked one, and refuses an escape, a symlink and an oversized file", async () => {
+	it("stores exactly the files the message links, and refuses an escape, a symlink and an oversized file", async () => {
 		const workspace = await temp("mason-outbox-");
 		const dataDir = await temp("mason-outbox-data-");
 		const store = new AttachmentStore({ dataDir });
 		const out = join(workspace, "out");
 		await mkdir(out, { recursive: true });
 		await writeFile(join(out, "report.md"), "hello");
+		// A file the message never mentions: present under `out/`, and not a deliverable. Nothing walks for it.
 		await writeFile(join(out, "extra.txt"), "yo");
 		await writeFile(join(out, "big.bin"), "x".repeat(20));
 		await writeFile(join(workspace, "secret.txt"), "top secret");
@@ -99,22 +121,64 @@ describe("the post-turn resolver", () => {
 			workspaceDir: workspace,
 			rowId: "message:1",
 			entryId: "7",
-			text: "[report](file:out/report.md) [leak](file:out/leak) [service](file:service/key.txt) [big](file:out/big.bin)",
-			startedAt: 0,
+			text: "[report](out/report.md) [leak](out/leak) [service](file:service/key.txt) [big](out/big.bin)",
 			limits: { maxBytes: 8 },
 		});
 		assert.ok(record, "a turn with a refused file still records the refusal");
 		assert.deepEqual(
-			record.assets.map((asset) => asset.name).sort(),
-			["extra.txt", "report.md"],
-			"the linked file and the unlinked one written during the turn",
+			record.assets.map((asset) => asset.name),
+			["report.md"],
+			"only the linked file: an unlinked file in out/ is in no assets[]",
 		);
-		assert.match(record.links["file:out/report.md"] ?? "", /^asset:cnt_[0-9a-f]{32}$/);
-		assert.equal(record.links["file:out/leak"], undefined, "a symlink is not attached");
+		assert.match(record.links["out/report.md"] ?? "", /^asset:cnt_[0-9a-f]{32}$/);
+		assert.equal(record.links["out/leak"], undefined, "a symlink is not attached");
 		assert.equal(record.links["file:service/key.txt"], undefined, "service/ is not out/");
 		assert.match(record.notice ?? "", /could not be attached/);
 		assert.ok(!JSON.stringify(record).includes("top secret"), "the refused file's bytes never reach the record");
 		assert.ok(!JSON.stringify(record).includes(workspace), "the record names no path");
+	});
+
+	it("accepts the older `file:` spelling of a link, and records the target without the prefix", async () => {
+		const workspace = await temp("mason-outbox-prefix-");
+		const dataDir = await temp("mason-outbox-prefix-data-");
+		const store = new AttachmentStore({ dataDir });
+		await mkdir(join(workspace, "out"), { recursive: true });
+		await writeFile(join(workspace, "out", "report.md"), "hello");
+		const record = await resolveTurnAssets({
+			env,
+			store,
+			workspaceDir: workspace,
+			rowId: "message:1",
+			entryId: "13",
+			text: "[report](file:out/report.md)",
+		});
+		assert.deepEqual(
+			record?.links,
+			{ "out/report.md": `asset:${record?.assets[0]?.id}` },
+			"the store spells the target once, without the retired prefix",
+		);
+	});
+
+	it("accepts a link that names the workspace above the outbox, because a device's cwd is the home above it", async () => {
+		const workspace = await temp("mason-outbox-workspace-");
+		const dataDir = await temp("mason-outbox-workspace-data-");
+		const store = new AttachmentStore({ dataDir });
+		await mkdir(join(workspace, "out"), { recursive: true });
+		await writeFile(join(workspace, "out", "report.md"), "hello");
+		const record = await resolveTurnAssets({
+			env,
+			store,
+			workspaceDir: workspace,
+			rowId: "message:1",
+			entryId: "14",
+			text: "[report](workspace/out/report.md)",
+		});
+		assert.deepEqual(
+			record?.assets.map((asset) => asset.name),
+			["report.md"],
+			"`workspace/out/` and `out/` name the same file",
+		);
+		assert.match(record?.links["workspace/out/report.md"] ?? "", /^asset:cnt_[0-9a-f]{32}$/);
 	});
 
 	it("refuses a parent segment before the filesystem sees it", async () => {
@@ -128,8 +192,7 @@ describe("the post-turn resolver", () => {
 			workspaceDir: workspace,
 			rowId: "message:1",
 			entryId: "8",
-			text: "[x](file:out/../../etc/passwd)",
-			startedAt: 0,
+			text: "[x](out/../../etc/passwd)",
 		});
 		assert.deepEqual(record?.assets, []);
 		assert.deepEqual(record?.links, {});
@@ -150,8 +213,7 @@ describe("the post-turn resolver", () => {
 			workspaceDir: workspace,
 			rowId: "message:1",
 			entryId: "9",
-			text: "",
-			startedAt: 0,
+			text: "[a](out/a.txt) [b](out/b.txt)",
 			limits: { maxAssets: 1 },
 		});
 		assert.equal(record?.assets.length, 1);
@@ -170,7 +232,6 @@ describe("the post-turn resolver", () => {
 				rowId: "message:1",
 				entryId: "10",
 				text: "no files here",
-				startedAt: 0,
 			}),
 			undefined,
 		);
@@ -187,7 +248,7 @@ describe("a turn's file over the wire", () => {
 					[fauxToolCall("write", { path: "out/report.md", content: "hello outbox" }, { id: "w1" })],
 					{ stopReason: "toolUse" },
 				),
-				fauxAssistantMessage(fauxText("[report](file:out/report.md)")),
+				fauxAssistantMessage(fauxText("[report](out/report.md)")),
 			],
 		});
 		try {
@@ -261,10 +322,20 @@ describe("a turn's file over the wire", () => {
 				});
 				assert.equal(response.status, 200);
 				assert.equal(await response.text(), "from them");
-				// The model still reads it from the inbox, at the path the turn was given.
-				assert.ok(
-					(await stat(join(served.server.runtime.workspaceDir, "inbox", upload.contentId, "note.txt"))).isFile(),
+				// The model still reads it from the inbox, at the path the line names, through the same environment its
+				// tools use: nothing was written by the process that submitted it.
+				const env = await served.server.runtime.env.envFor({
+					conversationId: String(served.server.runtime.rootId),
+					cwd: served.server.runtime.workspaceDir,
+				});
+				const path = attachmentPath("~", upload.contentId, "note.txt");
+				await until(
+					async () => (await env.readBinaryFile(path, BACKGROUND_CONTEXT)).ok,
+					"the file at the line's path",
 				);
+				const read = await env.readBinaryFile(path, BACKGROUND_CONTEXT);
+				assert.ok(read.ok, "the file is where the line said it would be");
+				assert.equal(Buffer.from(read.value).toString("utf8"), "from them");
 			} finally {
 				await connected.close();
 			}
@@ -288,8 +359,7 @@ describe("the outbox's boundary cases", () => {
 			workspaceDir: workspace,
 			rowId: "message:1",
 			entryId: "11",
-			text: "[profile](file:out/profile.md)",
-			startedAt: 0,
+			text: "[profile](out/profile.md)",
 		});
 		assert.deepEqual(record?.assets, [], "a symlinked out/ is not a directory the turn may attach from");
 		assert.match(record?.notice ?? "", /could not be attached/);
@@ -309,8 +379,7 @@ describe("the outbox's boundary cases", () => {
 			workspaceDir: workspace,
 			rowId: "message:1",
 			entryId: "12",
-			text: "",
-			startedAt: 0,
+			text: "[a](out/a.txt) [b](out/b.txt)",
 			limits: { maxBytes: 10, maxTurnBytes: 8 },
 		});
 		assert.equal(record?.assets.length, 1, "the second six-byte file would take the turn over eight");
@@ -318,46 +387,27 @@ describe("the outbox's boundary cases", () => {
 	});
 });
 
-describe("an unlinked outbox file", () => {
-	it("is attached when a tool round wrote it, even though the answer never names it", async () => {
-		const served = await serveConnector({
-			steps: [
-				fauxAssistantMessage(
-					[fauxToolCall("write", { path: "out/report.md", content: "unlinked but real" }, { id: "w2" })],
-					{ stopReason: "toolUse" },
-				),
-				fauxAssistantMessage(fauxText("Done.")),
-			],
+describe("a file in out/ the message never links", () => {
+	it("is not attached: the array is exactly the text's links", async () => {
+		const workspace = await temp("mason-outbox-unlinked-");
+		const dataDir = await temp("mason-outbox-unlinked-data-");
+		const store = new AttachmentStore({ dataDir });
+		await mkdir(join(workspace, "out"), { recursive: true });
+		await writeFile(join(workspace, "out", "report.md"), "written, never mentioned");
+		const record = await resolveTurnAssets({
+			env,
+			store,
+			workspaceDir: workspace,
+			rowId: "message:1",
+			entryId: "14",
+			text: "Done.",
 		});
-		try {
-			const connected = await connectConnector(served);
-			try {
-				await connected.connector.submit({
-					origin: { ref: "team", actor: { id: "8811" } },
-					content: [{ type: "text", text: "write the report" }],
-				});
-				let row: { id: string; text: string } & Record<string, unknown> = { id: "", text: "" };
-				await until(() => {
-					const state = connected.states.at(-1);
-					const found = state?.transcript.find(
-						(item) => item.kind === "delivered" && (item.assets?.length ?? 0) > 0,
-					);
-					if (found !== undefined && found.kind === "delivered") row = found;
-					return found !== undefined;
-				}, "the unlinked file on the agent row");
-				assert.equal(row.text, "Done.");
-				const assets = row.assets as Array<{ id: string; name: string }>;
-				assert.equal(assets[0]?.name, "report.md");
-				const response = await fetch(`${served.base}/api/connector/assets/${assets[0]?.id}`, {
-					headers: { authorization: `Bearer ${served.credential}` },
-				});
-				assert.equal(await response.text(), "unlinked but real");
-			} finally {
-				await connected.close();
-			}
-		} finally {
-			await served.close();
-		}
+		assert.equal(record, undefined, "no link, no asset record, and no notice about the file left behind");
+		assert.equal(
+			await readFile(join(workspace, "out", "report.md"), "utf8"),
+			"written, never mentioned",
+			"the file stays in the workspace, where the person can ask about it",
+		);
 	});
 });
 
