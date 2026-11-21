@@ -37,7 +37,6 @@ export const HOME_ENTRIES: readonly string[] = [
 	"journal",
 	"skills",
 	"agents",
-	"workspace",
 	"soul.md",
 	"config.json",
 	"ssh",

@@ -23,9 +23,10 @@ import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { readDocsIndex, SHIPPED_DOCS_DIR } from "./docs.ts";
 import { CODEMODE_SECTION } from "./extensions/codemode.ts";
 import { discoverSkills, renderSkills } from "./extensions/skills.ts";
-import { capText, currentHouse, readHouseFile } from "./house.ts";
+import { capText, currentDevice, currentHouse, readHouseFile } from "./house.ts";
 import { currentIntegrationSurface, currentIntegrations } from "./integrations.ts";
-import { type ResidentInput, readResidentFile } from "./resident.ts";
+import { PROFILE_MAX_CHARS } from "./memory-check.ts";
+import { prepareResidentTurn, type ResidentInput, readResidentFile } from "./resident.ts";
 import { UNTRUSTED_RULE } from "./untrusted.ts";
 
 /**
@@ -85,11 +86,8 @@ conversation, so write the answer itself and not a note about it. It goes back w
 connector that carried the words, or the transcript — so never reach for a chat by another tool's name, and no address
 of your own exists to name. A submission turn that ends without writing anything leaves them with silence. Write
 something, even one line.
-A file you make for them goes under \`out/\`, and the message links it as \`[name](out/name.ext)\`: a file reaches them only if
-the message links it, and nothing outside \`out/\` can be linked.`;
-
-/** Roughly 1200 tokens of profile: enough for who he is and how he wants to be treated, and no more. */
-const PROFILE_MAX_CHARS = 4_800;
+A file you make for them goes under \`workspace/out/\`, and the message links it as \`[name](workspace/out/name.ext)\`: a
+file reaches them only if the message links it, and nothing outside \`workspace/out/\` can be linked.`;
 
 /**
  * What a turn of real work owes the next one, in the prompt because the counter that enforces it fires at the end.
@@ -218,7 +216,8 @@ path with \`write\`, as short markdown under a page, and rewrite it as you learn
  * edited during a turn lands in the next one (`resident.ts` holds both rules).
  */
 async function renderProfile(input: ResidentInput, context: Context): Promise<string> {
-	const path = currentHouse().profile;
+	// The path the tools see, not the host's: the prompt is rendered here and names the device's files.
+	const path = currentDevice().profile;
 	const text = await readResidentFile(input, path, context);
 	if (text === undefined) return firstRun(path);
 	return [
@@ -234,16 +233,23 @@ async function renderProfile(input: ResidentInput, context: Context): Promise<st
 export const PROMPT_SECTIONS: readonly PromptSection[] = [
 	// pi's name for the untagged opening of the system prompt. Two paragraphs that belong together: who the agent is,
 	// and how to read a turn that arrived without a person behind it. Untagged, so the soul reads as one voice.
-	section("preamble", async () => `${(await readHouseFile(currentHouse().soul)) ?? DEFAULT_SOUL}\n\n${WAKE_RULE}`, {
-		tag: false,
-	}),
+	section(
+		"preamble",
+		async (input, context) => {
+			// The first section rendered, so this is where the turn's checkout becomes current: the skills scan and the
+			// profile below read `~/agent`, and a fresh device has neither until the host's tip is fetched.
+			await prepareResidentTurn(input, context);
+			return `${(await readHouseFile(currentHouse().soul)) ?? DEFAULT_SOUL}\n\n${WAKE_RULE}`;
+		},
+		{ tag: false },
+	),
 	// Second, before anything about the environment: voice governs every sentence the agent writes.
 	section("tone", () => TONE),
 	section("cwd", (input) => input.env?.cwd),
 	// Scanned on the tool machine, and re-probed on every render: a skill written a minute ago is in the next request.
 	// One root, seeded from the repository at boot (`house.ts`), so the deployment's tool machine has the same skills.
 	section("skills", async (input, context) =>
-		renderSkills(await discoverSkills(environmentOf(input), [currentHouse().skillsDir], context)),
+		renderSkills(await discoverSkills(environmentOf(input), [currentDevice().skillsDir], context)),
 	),
 	section("profile", (input, context) => renderProfile(input, context)),
 	// Where the reference is, with an index rather than a copy of it: documents that grow are the reason the prompt

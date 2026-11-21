@@ -34,6 +34,16 @@ import { liveOf } from "./status.ts";
 /** The output directory, relative to the workspace the tools run in. */
 export const OUTBOX = "out";
 
+/**
+ * The workspace's own name, which a link may carry: the tools' cwd is the home above it (`runtime.ts`), so a message
+ * written from there spells `workspace/out/name.ext`, and one written from inside the workspace spells `out/name.ext`.
+ * Both name the same directory, and the workspace is what the resolver joins them against.
+ */
+export const WORKSPACE = "workspace";
+
+/** The two spellings a link may use for the outbox, each with its trailing slash. */
+const OUTBOX_TARGETS: readonly string[] = [`${OUTBOX}/`, `${WORKSPACE}/${OUTBOX}/`];
+
 /** What one turn may attach. A test narrows these; a deployment runs the defaults. */
 export interface TurnAssetLimits {
 	readonly maxAssets: number;
@@ -251,10 +261,11 @@ function outboxLinks(text: string): OutboxLink[] {
 		if (written === undefined) continue;
 		const wasFile = written.startsWith("file:");
 		const target = wasFile ? written.slice("file:".length) : written;
-		// A plain link is a delivery attempt only when it names `out/`; a `file:` target is one whatever it names, because
-		// that is what the older prompt taught. Everything else in a message is prose.
-		if (!wasFile && !target.startsWith(`${OUTBOX}/`)) continue;
 		const relative = outPathOf(target);
+		// A plain link is a delivery attempt only when it names the outbox, under either spelling; a `file:` target is one
+		// whatever it names, because that is what the older prompt taught. Everything else in a message is prose. A target
+		// that names the outbox and escapes it stays a delivery attempt with no path, so the row carries the refusal.
+		if (!wasFile && !OUTBOX_TARGETS.some((prefix) => target.startsWith(prefix))) continue;
 		links.push({ target, ...(relative === undefined ? {} : { relative }) });
 	}
 	return links;
@@ -263,13 +274,19 @@ function outboxLinks(text: string): OutboxLink[] {
 /**
  * The path under `out/` a target names, or `undefined` when it is not one this turn may attach.
  *
- * Only a relative path is accepted. An absolute path, a parent segment, a Windows drive and a control character are
- * refused before the filesystem sees them; the canonical check after this is what refuses a symlink that stays inside
- * `out/`.
+ * Only a relative path is accepted, spelled `out/…` or `workspace/out/…`: the tools' cwd is the home above the workspace,
+ * so a message written there names the workspace. An absolute path, a parent segment, a Windows drive and a control
+ * character are refused before the filesystem sees them; the canonical check after this is what refuses a symlink that
+ * stays inside `out/`.
  */
 function outPathOf(target: string): string | undefined {
-	if (!target.startsWith(`${OUTBOX}/`)) return undefined;
-	const relative = target.slice(OUTBOX.length + 1);
+	const under = target.startsWith(`${WORKSPACE}/${OUTBOX}/`)
+		? target.slice(WORKSPACE.length + OUTBOX.length + 2)
+		: target.startsWith(`${OUTBOX}/`)
+			? target.slice(OUTBOX.length + 1)
+			: undefined;
+	if (under === undefined) return undefined;
+	const relative = under;
 	if (relative === "" || relative.startsWith("/") || relative.includes("\\") || relative.includes(":")) {
 		return undefined;
 	}

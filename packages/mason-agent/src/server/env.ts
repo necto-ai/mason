@@ -8,7 +8,14 @@ import type { JsonValue } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { type ConversationId, defineDoc, type Harness } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
-import { Connection, localDaemon, RemoteExecutionEnv, type SshTarget, sshConnection } from "@earendil-works/pi-env";
+import {
+	Connection,
+	isConnectionLost,
+	localDaemon,
+	RemoteExecutionEnv,
+	type SshTarget,
+	sshConnection,
+} from "@earendil-works/pi-env";
 
 export interface RuntimeEnvManager {
 	envFor(input: { conversationId: string; cwd?: string }): Promise<ExecutionEnv>;
@@ -18,7 +25,8 @@ export interface RuntimeEnvManager {
 /**
  * What an execution target says a conversation works on: the machine's kind and the directory inside it. `local` is
  * the only kind this build runs; the field is stored whole, so a later kind needs no migration; a kind this build does
- * not run resolves to a hard error, not a default.
+ * not run resolves to a hard error, not a default. The cwd is a path on the machine that runs the tools — the device
+ * home on a device, the workspace when they run here — and never the host's name for a directory the device lacks.
  */
 export interface ExecutionTargetState {
 	[key: string]: JsonValue;
@@ -68,8 +76,8 @@ export function targetDocChannel(session: Harness): ExecutionTargetDocChannel {
 }
 
 export interface RuntimeEnvManagerOptions {
-	/** Default working directory when a conversation has no `cwd` of its own. */
-	workspaceDir: string;
+	/** The home the tools run in: the device home (`/home/<bot>`), or the host home when they run here. */
+	cwd: string;
 	/** When set, every tool call runs on this SSH target instead of locally. */
 	ssh?: SshTarget;
 	onLog?(text: string): void;
@@ -146,6 +154,38 @@ export function sshTargetFromEnv(env: NodeJS.ProcessEnv = process.env): SshTarge
 	};
 }
 
+/**
+ * A device that is not there, named once.
+ *
+ * pi-env reports a lost connection as `{ code: "unknown", lost: true }`; `FileError` keeps it as the cause and
+ * `ExecutionError` keeps only the message, so both shapes are recognised here. The sentence says "device lost" because
+ * that is the condition an operator can act on, and it says the turn was not retried because a mutation whose outcome
+ * is unknown must never be replayed.
+ */
+export class DeviceLostError extends Error {
+	constructor(why: string) {
+		super(`device lost: ${why} — the turn was not retried`);
+		this.name = "DeviceLostError";
+	}
+}
+
+/** The lost-device sentences pi-env and the transport produce, as the fallback when the cause is gone. */
+const LOST_MESSAGE =
+	/pi-env (?:connection lost|connection timed out|did not answer within .* s|exited with code .* before it was ready)|spawn pi-env|ssh: connect to host .*|ECONNREFUSED/i;
+
+/** Whether a failed environment call means the device stopped answering, rather than the device refusing the request. */
+export function isDeviceLost(error: unknown): boolean {
+	if (error instanceof Error && isConnectionLost((error as { cause?: unknown }).cause)) return true;
+	const message = error instanceof Error ? error.message : String(error);
+	return LOST_MESSAGE.test(message);
+}
+
+/** The named condition a caller throws for an unreachable device. The original sentence is kept for an operator. */
+export function deviceLost(error: unknown): DeviceLostError {
+	if (error instanceof DeviceLostError) return error;
+	return new DeviceLostError(error instanceof Error ? error.message : String(error));
+}
+
 /** One conversation's resolved target: the machine it runs on (`ExecutionTargetState`) and the connection to it. */
 export interface ExecutionTarget {
 	readonly state: ExecutionTargetState;
@@ -192,13 +232,13 @@ class ExecutionTargets implements ExecutionTargetManager {
 	/** The stored target, or the fresh one written through the channel when the conversation had none. */
 	async #resolveState(conversationId: string, cwd?: string): Promise<ExecutionTargetState> {
 		const channel = this.#options.targets;
-		if (channel === undefined) return { kind: "local", cwd: cwd ?? this.#options.workspaceDir };
+		if (channel === undefined) return { kind: "local", cwd: cwd ?? this.#options.cwd };
 		const stored = await channel.read(conversationId);
 		if (stored !== undefined && stored.cwd !== "") {
 			if (stored.kind !== "local") throw unknownTargetKind(stored.kind);
 			return stored;
 		}
-		const fresh: ExecutionTargetState = { kind: "local", cwd: cwd ?? this.#options.workspaceDir };
+		const fresh: ExecutionTargetState = { kind: "local", cwd: cwd ?? this.#options.cwd };
 		await channel.write(conversationId, fresh);
 		return fresh;
 	}

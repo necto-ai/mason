@@ -17,19 +17,18 @@ One process is one bot: started by `npm run dev` in a checkout, or by `mason up`
 - **The durable Harness and SQLite** (`src/server/runtime.ts`) hold the conversation. The transcript is the truth: every
   answer is an entry, and a restart resumes from the log, not memory.
 - **`@earendil-works/pi-env` is the execution split** (`src/server/env.ts`): the model and the harness run here, and the
-  tools that touch files run on the tool machine, which is the only place `~/.mason/agent/` is mounted. What that
-  machine's image must contain is [`tools-image.md`](tools-image.md); `docker/` runs both halves in one container for
-  tests and demos ([ADR-0016](adr/0016-one-container-is-not-a-tool-machine.md)).
+  tools that touch files run on a device holding `~/agent`, a checkout of the host's memory (`src/server/checkout.ts`).
+  What that machine's image must contain is [`tools-image.md`](tools-image.md); `docker/` runs both halves in one
+  container for tests and demos ([ADR-0016](adr/0016-one-container-is-not-a-tool-machine.md)).
 - **Connectors are the out-of-process edge** (`src/server/connector.ts`, `packages/protocol`): one Chord socket at
   `/api/connector`, opened by a service that carries a *user* face, an *events* face, or both. An integration's *MCP
   server* is the other direction: mason calls it with that server's credential.
-- **The home is `~/.mason/<bot>/`** (`src/server/house.ts`): `agent/`, which the tool machine mounts — `profile.md`, the
-  dated `log/`, `skills/`, `workspace/`, and its git history — and `service/`, which the tool machine never sees unless
-  both halves share one container ([ADR-0016](adr/0016-one-container-is-not-a-tool-machine.md)). `~/.mason` itself is the
-  root (`src/server/root.ts`): `common/` and one directory per bot.
+- **The home is `~/.mason/<bot>/`** (`src/server/house.ts`): `agent/`, the host's repository whose device copy is
+  `~/agent` — `profile.md`, the dated `log/`, `skills/`, its git history — `workspace/` beside it, and `service/`, which
+  the device never sees. `~/.mason` itself is the root (`src/server/root.ts`): `common/` and one directory per bot.
 - **The prompt** is `src/server/prompt.ts` and only that file: every section, in reading order.
-- **Tools** are extensions (`src/server/extensions/`) plus the four per-boot ones, `inbox`, `subagent`, `mcp` and
-  `codemode`.
+- **Tools** are extensions (`src/server/extensions/`) plus the per-boot `checkout`, `memory-check`, `inbox`,
+  `subagent`, `mcp` and `codemode`.
 - **Hooks** (`src/server/hooks.ts`) are the ways a turn starts without a person: a timer, a fire, and the run
   supervisor's retry.
 

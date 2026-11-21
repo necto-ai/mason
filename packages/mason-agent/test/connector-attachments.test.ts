@@ -428,7 +428,7 @@ describe("a file whose bytes changed before the turn", () => {
 		});
 		// The turn cannot resolve its machine until the bytes have been replaced, which is the state a corrupt store is
 		// in when a turn starts: the sidecar still names the upload, and the bytes are not the ones it recorded.
-		const inner: RuntimeEnvManager = createRuntimeEnvManager({ workspaceDir: await temporaryDirectory() });
+		const inner: RuntimeEnvManager = createRuntimeEnvManager({ cwd: await temporaryDirectory() });
 		const env: RuntimeEnvManager = {
 			async envFor(input: { conversationId: string; cwd?: string }) {
 				await held;
@@ -585,9 +585,9 @@ describe("a submission on a non-local target", () => {
 	it("lands in the target's inbox through the environment, and only once the turn starts", { skip }, async () => {
 		if (ssh === undefined) return;
 		// The device's home is its own directory, not the server's workspace: a file at one path and not the other is
-		// what proves the bytes crossed the environment boundary rather than a `writeFile`.
-		const workspace = await temporaryDirectory();
-		const inner: RuntimeEnvManager = createRuntimeEnvManager({ workspaceDir: workspace, ssh });
+		// what proves the bytes crossed the environment boundary rather than a `writeFile`. The cwd is the device's `~`,
+		// which is what `runtime.ts` gives a device target.
+		const inner: RuntimeEnvManager = createRuntimeEnvManager({ cwd: "~", ssh });
 		let release: (() => void) | undefined;
 		const held = new Promise<void>((resolve) => {
 			release = resolve;

@@ -28,6 +28,7 @@ import {
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { AttachmentStore } from "./attachments.ts";
+import { CHECKOUT_EXTENSION_NAME, Checkout, createCheckoutExtension, hostBranch } from "./checkout.ts";
 import {
 	type AgentRole,
 	commonPaths,
@@ -47,7 +48,15 @@ import { CODEMODE_EXTENSION, createCodemode } from "./extensions/codemode.ts";
 import { Delivery } from "./extensions/delivery.ts";
 import { createSubagent, SUBAGENT_EXTENSION } from "./extensions/subagent.ts";
 import { HooksManager } from "./hooks.ts";
-import { configureHouse, ensureHouse, ensureRepository, type HousePaths, housePaths } from "./house.ts";
+import {
+	configureHouse,
+	deviceHomeFor,
+	devicePaths,
+	ensureHouse,
+	ensureRepository,
+	type HousePaths,
+	housePaths,
+} from "./house.ts";
 import { createInbox, INBOX_EXTENSION } from "./inbox.ts";
 import {
 	assertOneUserGrant,
@@ -59,8 +68,10 @@ import {
 } from "./integrations.ts";
 import { leaseDirOf } from "./lease.ts";
 import { MCP_EXTENSION, type McpCatalog, type McpTransportFactory, openMcpCatalog } from "./mcp.ts";
+import { createMemoryCheckExtension, MEMORY_EXTENSION_NAME } from "./memory-check.ts";
 import { DEFAULT_SOUL, Prompt } from "./prompt.ts";
 import { fauxSessionScript } from "./provider.ts";
+import { setResidentPrepare } from "./resident.ts";
 import { RETRY_HOOK } from "./run-retry.ts";
 
 /**
@@ -86,12 +97,20 @@ export const BASE_EXTENSIONS: readonly Extension[] = [
 /**
  * The extensions a boot builds for itself, beside the base list, and the names `docs/SURFACE.md` renders.
  *
- * `inbox`, `subagent` and `codemode` are in every boot; `mcp` is in a boot whose enabled integrations have a server.
- * They are built per boot rather than declared at import because each owns something that dies with the process — the
- * asset store, a lease directory, a QuickJS sandbox, one client socket per integration. `scripts/surface.ts` renders
- * exactly this list, and `npm run gen:surface` is what keeps the document and the boot from drifting.
+ * `checkout`, `memory-check`, `inbox`, `subagent` and `codemode` are in every boot; `mcp` is in a boot whose enabled
+ * integrations have a server. They are built per boot rather than declared at import because each owns something that
+ * dies with the process — a serialized sync, the asset store, a lease directory, a QuickJS sandbox, one client socket per
+ * integration. The order is the order their `beforeRequest` hooks run in, so a turn is synced before its files land.
+ * `scripts/surface.ts` renders exactly this list, and `npm run gen:surface` is what keeps the document and the boot from
+ * drifting.
  */
-export const PER_BOOT_EXTENSIONS = [INBOX_EXTENSION, SUBAGENT_EXTENSION, CODEMODE_EXTENSION] as const;
+export const PER_BOOT_EXTENSIONS = [
+	CHECKOUT_EXTENSION_NAME,
+	MEMORY_EXTENSION_NAME,
+	INBOX_EXTENSION,
+	SUBAGENT_EXTENSION,
+	CODEMODE_EXTENSION,
+] as const;
 /** The per-boot extension a boot installs only when an enabled integration has an MCP server. */
 export const MCP_EXTENSION_NAME = MCP_EXTENSION;
 
@@ -165,6 +184,7 @@ export interface AgentRuntime {
 	readonly mcp: McpCatalog;
 	/** Uploaded bytes and a turn's files: durable in the home's data half, and the one store both directions read. */
 	readonly attachments: AttachmentStore;
+	/** The workspace as the tools name it — the device's `~/workspace` on a device, the host's directory when they run here. */
 	readonly workspaceDir: string;
 	readonly model: AgentModelRef;
 	/** The two roles this boot runs: what the status line names and what a child conversation is configured with. */
@@ -198,6 +218,11 @@ export interface OpenAgentRuntimeOptions {
 	readonly workspaceDir?: string;
 	/** The home this boot serves, one bot's directory under a root; tests point it at a temporary directory. */
 	readonly houseHome?: string;
+	/**
+	 * The path the device calls this home, when it is not `/home/<bot>`: a test bench's scratch directory, or an
+	 * operator whose device user is not named after the bot. `PI_ENV_DEVICE_HOME` is the same override for a stack.
+	 */
+	readonly deviceHome?: string;
 	/** `memory` keeps everything in RAM: tests and throwaway runs. */
 	readonly storage?: "sqlite" | "memory";
 	readonly storageOverride?: Storage;
@@ -425,10 +450,18 @@ export async function resolveModelAccess(options: OpenAgentRuntimeOptions, house
 
 /** Opens storage, the harness, and the root conversation; resumes any run a previous process left unfinished. */
 export async function openAgentRuntime(context: Context, options: OpenAgentRuntimeOptions = {}): Promise<AgentRuntime> {
+	// The machine the tools run on is decided before the home is configured: the prompt names the device's paths, and
+	// the tool cwd is the device home. A malformed runtime file refuses the boot here, before anything is created.
+	const house = housePaths(options.houseHome);
+	const runtimeDefault = house.root === undefined ? undefined : await readCommonRuntime(house.root.root);
+	const ssh =
+		sshTargetFromEnv() ?? (runtimeDefault === undefined ? undefined : sshTargetFromRuntime(runtimeDefault, house));
+	const deviceHome =
+		ssh === undefined ? house.home : (options.deviceHome ?? process.env.PI_ENV_DEVICE_HOME ?? deviceHomeFor(house));
 	// The agent's home: its soul, its profile, its log, its skills, its state, and the directory it works in, in the two
-	// halves the deployment mounts separately. Created once, and never overwritten. The workspace is its own directory,
-	// not the code's: an agent that can edit the program that runs it is a different product.
-	const house = configureHouse(housePaths(options.houseHome));
+	// halves the deployment keeps apart. Created once, and never overwritten. The workspace is its own directory, not the
+	// code's: an agent that can edit the program that runs it is a different product.
+	configureHouse(house, { deviceHome });
 	await ensureHouse(house, DEFAULT_SOUL);
 	// The integration list, once, before anything can run: the tool surface and the prompt section are decided at boot,
 	// and a file that cannot be read is refused here rather than leaving the process with fewer tools than the operator
@@ -467,6 +500,13 @@ export async function openAgentRuntime(context: Context, options: OpenAgentRunti
 		// the agent writes there is on the same disk as the repository that records it.
 		await ensureRepository(house.agentDir);
 		const workspaceDir = options.workspaceDir ?? house.workspaceDir;
+		// The tools work at the device home: `~/agent` is memory, `~/workspace` is scratch, and the paths they print are
+		// the paths the prompt names. A local run keeps its workspace as the cwd: files in and out are a separate
+		// contract, and a local agent is a development target, not the device shape.
+		const cwd = ssh === undefined ? (options.workspaceDir ?? workspaceDir) : deviceHome;
+		// The workspace as the tools name it: `out/` is below it, and the outbox is resolved through the same environment the
+		// tools wrote with. A local run's workspace is the host's directory, because that is where its tools run.
+		const toolWorkspaceDir = ssh === undefined ? workspaceDir : devicePaths(deviceHome).workspaceDir;
 		const dataDir = options.dataDir ?? process.env.MASON_DATA ?? house.dataDir;
 		// One store for both directions, created with the boot because the inbox extension is part of the boot: the
 		// connector door and the download route read the same object, so an id the connector wrote is an id the route serves.
@@ -514,9 +554,41 @@ export async function openAgentRuntime(context: Context, options: OpenAgentRunti
 		const { models, ref, faux } = access;
 		const roles = access.roles ?? derivedRoles(ref);
 
-		// The inbox is per boot because the store is: the hook reads the same bytes the route serves. Its environment accessor
-		// is resolved at the first request, after the manager below exists; no request can run during a boot.
+		// The device's checkout, when the tools run on one: the host's repository is what the turn is synced with. A local
+		// run installs the same hooks with the sync disabled, so a selection written by one boot is repaired with the names
+		// the other boot also carries.
+		const checkout = new Checkout({
+			host: house.agentDir,
+			deviceAgentDir: devicePaths(deviceHome).agentDir,
+			branch: await hostBranch(house.agentDir),
+			enabled: ssh !== undefined,
+			...(options.onReport === undefined ? {} : { onLog: (line: string) => console.log(line) }),
+		});
+
+		// The prompt is part of the turn: the first section rendered pulls the host's tip into the checkout, before the
+		// profile and the skills scan read `~/agent`. The checkout extension's own pull then finds nothing to do.
+		if (checkout.enabled) {
+			setResidentPrepare(async (env, context) => {
+				await checkout.pull(env, context);
+			});
+			opened.push(async () => setResidentPrepare(undefined));
+		}
+		// The hooks run after the boot, so the environment manager can be wired here and read then: no environment is built
+		// while the harness opens, and the first request is the one that resolves this.
 		let environments: RuntimeEnvManager | undefined;
+		const checkoutExtension = createCheckoutExtension({
+			checkout,
+			envFor: async (conversationId) => {
+				if (environments === undefined) throw new Error("checkout: the environment manager is not open yet");
+				return environments.envFor({ conversationId });
+			},
+		});
+		const memoryExtension = createMemoryCheckExtension({
+			deviceHome,
+			agentDir: devicePaths(deviceHome).agentDir,
+		});
+		// The inbox is per boot because the store is: the hook reads the same bytes the route serves. Its environment accessor
+		// is resolved at the first request, after the manager above exists; no request can run during a boot.
 		const inbox = createInbox({
 			store: attachments,
 			environments: () => {
@@ -529,6 +601,8 @@ export async function openAgentRuntime(context: Context, options: OpenAgentRunti
 		const subagent = createSubagent({ leaseDir: options.leaseDir ?? leaseDirOf(), role: roles.subagent });
 		const extensionList: readonly Extension[] = [
 			...BASE_EXTENSIONS,
+			checkoutExtension,
+			memoryExtension,
 			inbox,
 			subagent,
 			...(options.extensions ?? []),
@@ -538,12 +612,16 @@ export async function openAgentRuntime(context: Context, options: OpenAgentRunti
 		// The per-boot names a document may render are the ones this boot actually built: a fourth built inline and left
 		// out of `PER_BOOT_EXTENSIONS` refuses the boot rather than escaping the surface check.
 		assertPerBootExtensions([
+			checkoutExtension.name,
+			memoryExtension.name,
 			inbox.name,
 			subagent.name,
 			...(mcp.extension === undefined ? [] : [mcp.extension.name]),
 			codemode.extension.name,
 		]);
 		const unconditional = unconditionalExtensionNames([
+			checkoutExtension.name,
+			memoryExtension.name,
 			inbox.name,
 			subagent.name,
 			...(mcp.extension === undefined ? [] : [mcp.extension.name]),
@@ -592,16 +670,12 @@ export async function openAgentRuntime(context: Context, options: OpenAgentRunti
 		// The execution-target seam reads and writes its `app.target` document through the opened harness, so the manager
 		// is built here, after the open. The `env` closure above reaches it at the first turn only: no environment is
 		// built while the harness opens, so the manager and its connection exist before anything resolves one.
-		// The machine tools run on: the environment's own target wins, and a root's `common/runtime.json` is the default a
-		// bot inherits when the environment names none. A malformed runtime file refuses the boot here rather than running
-		// tools on the wrong machine.
-		const runtimeDefault = house.root === undefined ? undefined : await readCommonRuntime(house.root.root);
-		const ssh =
-			sshTargetFromEnv() ?? (runtimeDefault === undefined ? undefined : sshTargetFromRuntime(runtimeDefault, house));
+		// The machine's connection: the environment's own target won, and a root's `common/runtime.json` was the default,
+		// both resolved before the home was configured. The environment the harness resolves works at the device home.
 		const envManager: RuntimeEnvManager =
 			options.env ??
 			createRuntimeEnvManager({
-				workspaceDir,
+				cwd,
 				...(ssh === undefined ? {} : { ssh }),
 				targets: targetDocChannel(harness),
 			});
@@ -609,7 +683,7 @@ export async function openAgentRuntime(context: Context, options: OpenAgentRunti
 		opened.push(() => envManager.close());
 
 		const root = await harness.root(context, {
-			agent: { model: ref, cwd: workspaceDir, extensions: options.selection ?? extensionList },
+			agent: { model: ref, cwd, extensions: options.selection ?? extensionList },
 		});
 		// The model the root conversation runs is durable state, not a boot option: `harness.root()` seeds `pi.agent`
 		// only when it creates the conversation, so a bot whose transcript predates a `defaultModel` change kept the old
@@ -634,7 +708,7 @@ export async function openAgentRuntime(context: Context, options: OpenAgentRunti
 			env: envManager,
 			mcp,
 			attachments,
-			workspaceDir,
+			workspaceDir: toolWorkspaceDir,
 			model: ref,
 			roles,
 			...(previousModel === undefined ? {} : { previousModel }),

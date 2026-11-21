@@ -238,7 +238,15 @@ async function checkRuntime(house: HousePaths): Promise<DoctorCheck> {
 				};
 	const daemon = localDaemon();
 	return existsSync(daemon)
-		? { name: "runtime", ok: true, detail: "local (the pi-env daemon is where this build says it is)" }
+		? {
+				name: "runtime",
+				ok: true,
+				// A local agent works only where a client exposes tools over MCP; the device contract — a checkout synced
+				// over the channel, a home that survives the machine — does not cover it. Say that rather than imply it.
+				detail:
+					"local: a development target (tools run in this process; the device contract — a separate machine with " +
+					"its own home and a checkout — does not cover it)",
+			}
 		: {
 				name: "runtime",
 				ok: false,

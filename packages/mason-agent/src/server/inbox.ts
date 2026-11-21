@@ -65,7 +65,8 @@ export function createInbox(options: InboxOptions): Extension {
 						refusals.clear();
 						pictures.clear();
 					}
-					const env = await options.environments().envFor({ conversationId: String(api.conversationId) });
+					const env = await environmentOf(options, api, turn, refusals, context);
+					if (env === undefined) return decorate(messages, refusals, pictures);
 					for (const entry of await inputsOf(api, turn, context)) {
 						const id = String(entry.id);
 						if (landed.has(id)) continue;
@@ -77,6 +78,30 @@ export function createInbox(options: InboxOptions): Extension {
 			}),
 		],
 	});
+}
+
+/**
+ * The turn's machine, or `undefined` with every ref of the turn refused when the device is not reachable.
+ *
+ * A hook that throws is an `extension_error` in the log and the request goes out unchanged (`hooks.each`), so a lost
+ * device would leave the model its `[file: ~/inbox/…]` line and no file — the failure #235 exists to remove. A device
+ * the turn cannot reach answers as the refusal line every ref already has, once per ref, and the turn continues.
+ */
+async function environmentOf(
+	options: InboxOptions,
+	api: HookApi,
+	turn: string,
+	refusals: Map<string, string>,
+	context: Context,
+): Promise<Awaited<ReturnType<RuntimeEnvManager["envFor"]>> | undefined> {
+	try {
+		return await options.environments().envFor({ conversationId: String(api.conversationId) });
+	} catch {
+		for (const entry of await inputsOf(api, turn, context)) {
+			for (const ref of assetsOf(entry)) refusals.set(`${entry.id}:${ref.id}`, refusalLine("unreadable"));
+		}
+		return undefined;
+	}
 }
 
 /** The run's first entry, the identity of the turn this request belongs to, or `undefined` outside a run. */

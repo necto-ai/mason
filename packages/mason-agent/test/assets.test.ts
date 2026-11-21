@@ -159,6 +159,28 @@ describe("the post-turn resolver", () => {
 		);
 	});
 
+	it("accepts a link that names the workspace above the outbox, because a device's cwd is the home above it", async () => {
+		const workspace = await temp("mason-outbox-workspace-");
+		const dataDir = await temp("mason-outbox-workspace-data-");
+		const store = new AttachmentStore({ dataDir });
+		await mkdir(join(workspace, "out"), { recursive: true });
+		await writeFile(join(workspace, "out", "report.md"), "hello");
+		const record = await resolveTurnAssets({
+			env,
+			store,
+			workspaceDir: workspace,
+			rowId: "message:1",
+			entryId: "14",
+			text: "[report](workspace/out/report.md)",
+		});
+		assert.deepEqual(
+			record?.assets.map((asset) => asset.name),
+			["report.md"],
+			"`workspace/out/` and `out/` name the same file",
+		);
+		assert.match(record?.links["workspace/out/report.md"] ?? "", /^asset:cnt_[0-9a-f]{32}$/);
+	});
+
 	it("refuses a parent segment before the filesystem sees it", async () => {
 		const workspace = await temp("mason-outbox-escape-");
 		const dataDir = await temp("mason-outbox-escape-data-");
