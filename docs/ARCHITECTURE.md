@@ -17,9 +17,9 @@ One process is one bot: started by `npm run dev` in a checkout, or by `mason up`
 - **The durable Harness and SQLite** (`src/server/runtime.ts`) hold the conversation. The transcript is the truth: every
   answer is an entry, and a restart resumes from the log, not memory.
 - **`@earendil-works/pi-env` is the execution split** (`src/server/env.ts`): the model and the harness run here, and the
-  tools that touch files run on the tool machine, which is the only place `~/.mason/agent/` is mounted. One container is
-  not a tool machine: `docker/` runs both halves there for tests and demos
-  ([ADR-0016](adr/0016-one-container-is-not-a-tool-machine.md)).
+  tools that touch files run on the tool machine, which is the only place `~/.mason/agent/` is mounted. What that
+  machine's image must contain is [`tools-image.md`](tools-image.md); `docker/` runs both halves in one container for
+  tests and demos ([ADR-0016](adr/0016-one-container-is-not-a-tool-machine.md)).
 - **Connectors are the out-of-process edge** (`src/server/connector.ts`, `packages/protocol`): one Chord socket at
   `/api/connector`, opened by a service that carries a *user* face, an *events* face, or both. An integration's *MCP
   server* is the other direction: mason calls it with that server's credential.

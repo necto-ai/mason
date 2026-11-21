@@ -40,6 +40,9 @@
 		"build": "npm run build -w mason-agent",
 		"prove:client": "node --experimental-strip-types scripts/prove-client-sdk.ts",
 		"prove:package": "node --experimental-strip-types scripts/prove-package.ts",
+		"prove:ssh-env": "node --experimental-strip-types scripts/prove-ssh-env.ts",
+		"prove:share-boundary": "bash scripts/prove-share-boundary.sh",
+		"prove:guest-desktop": "bash scripts/prove-guest-desktop.sh",
 		"lint": "node scripts/biome.mjs check .",
 		"lint:write": "node scripts/biome.mjs check --write ."
 	},
