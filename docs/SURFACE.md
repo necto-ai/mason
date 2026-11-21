@@ -22,7 +22,7 @@ connector presents a credential mason issued for it.
 
 The base list, in this order: coding-tools, prompt, delivery.
 
-Then the ones the boot builds for itself: subagent, codemode always, and `mcp` when an enabled entry has an MCP
+Then the ones the boot builds for itself: checkout, memory-check, subagent, codemode always, and `mcp` when an enabled entry has an MCP
 server. A per-boot extension owns something that dies with the process — a lease directory, a QuickJS sandbox, one client
 socket per integration — which is why none of them is a module constant.
 

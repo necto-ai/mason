@@ -53,6 +53,49 @@ function openFor(directory: string, access: ResolvedModel): Promise<AgentRuntime
 }
 
 describe("execution targets", () => {
+	it("names the device home when the tools run on a device, not the host's workspace", async () => {
+		const directory = await tempDir("target-device-home-");
+		const knownHosts = join(directory, "known_hosts");
+		await mkdir(knownHosts, { recursive: true });
+		const deviceHome = join(directory, "device");
+		const previous = {
+			host: process.env.PI_ENV_SSH_HOST,
+			knownHosts: process.env.PI_ENV_SSH_KNOWN_HOSTS,
+			alias: process.env.PI_ENV_SSH_ALIAS,
+			device: process.env.PI_ENV_DEVICE_HOME,
+		};
+		// A device that is configured but never dialled: `ensure()` builds the connection lazily, and this test is about
+		// the path the target names, not a round trip.
+		process.env.PI_ENV_SSH_HOST = "device.invalid";
+		process.env.PI_ENV_SSH_KNOWN_HOSTS = knownHosts;
+		process.env.PI_ENV_SSH_ALIAS = "device.invalid";
+		process.env.PI_ENV_DEVICE_HOME = deviceHome;
+		const { access } = fauxAccess();
+		let runtime: AgentRuntime | undefined;
+		try {
+			runtime = await openAgentRuntime(BACKGROUND_CONTEXT, {
+				dataDir: join(directory, "data"),
+				houseHome: join(directory, "house"),
+				modelAccess: access,
+				onReport: () => {},
+			});
+			const conversation = await runtime.conversation();
+			const target = await targetsOf(runtime).ensure(String(conversation.id));
+			assert.equal(target.state.cwd, deviceHome);
+		} finally {
+			await runtime?.close();
+			for (const [name, value] of [
+				["PI_ENV_SSH_HOST", previous.host],
+				["PI_ENV_SSH_KNOWN_HOSTS", previous.knownHosts],
+				["PI_ENV_SSH_ALIAS", previous.alias],
+				["PI_ENV_DEVICE_HOME", previous.device],
+			] as const) {
+				if (value === undefined) delete process.env[name];
+				else process.env[name] = value;
+			}
+		}
+	});
+
 	it("writes the target on first resolve, keeps it across a storage restart, and holds one connection", async () => {
 		const directory = await tempDir("target-restart-");
 		const custom = join(directory, "custom");

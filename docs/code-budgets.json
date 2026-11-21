@@ -2,8 +2,8 @@
 	"ceilings": {
 		"packages/mason-agent/bin": 92,
 		"packages/mason-agent/evals": 568,
-		"packages/mason-agent/scripts": 2056,
-		"packages/mason-agent/src": 7800,
+		"packages/mason-agent/scripts": 2055,
+		"packages/mason-agent/src": 8650,
 		"packages/protocol/src": 283,
 		"packages/client/src": 1545,
 		"scripts": 599

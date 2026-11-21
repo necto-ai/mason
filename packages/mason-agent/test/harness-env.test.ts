@@ -161,6 +161,7 @@ describe("durable harness + pi-env", () => {
 			// The write lands on the agent's half, through the daemon: the profile is written where the prompt reads it.
 			toolCall(
 				"write",
+				// A local run is its own device: `~` is the home, so the device path is the host path under the temporary home.
 				{ path: join(directory, "house", "agent", "profile.md"), content: "Denis prefers short answers.\n" },
 				"w",
 			),
@@ -183,7 +184,7 @@ describe("durable harness + pi-env", () => {
 				"done",
 			);
 			assert.match(
-				await readFile(join(currentHouse().agentDir, "profile.md"), "utf8"),
+				await readFile(join(directory, "house", "agent", "profile.md"), "utf8"),
 				/Denis prefers short answers\./,
 				"the profile is the one the tool machine wrote",
 			);
