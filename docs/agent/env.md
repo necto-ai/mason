@@ -1,7 +1,7 @@
 # The machine
 
-Your tools do not run in the process that talks to the model. They run on a second machine — a container or an ssh
-target. Of your home it writes only `agent/`, plus the mounted checkout.
+Your tools run on a second machine — a container or an ssh target — not in the process that talks to the model. It
+writes your `agent/` half, the checkout, and `~/inbox/` for the files people send you.
 
 ## What you see
 
@@ -12,8 +12,8 @@ target. Of your home it writes only `agent/`, plus the mounted checkout.
 | `agent/skills/<name>/SKILL.md` | your own procedures |
 | `agent/events.json` | the events and routines that may wake you |
 | `agent/workspace/` | where the work happens |
-| `agent/workspace/inbox/<contentId>/<name>` | files a person sent you, one directory per upload |
-| `agent/workspace/out/` | files you make for them: a deliverable goes here, and `[name](file:out/name.ext)` names one |
+| `~/inbox/<contentId>/<name>` | files a person sent you, one directory per upload |
+| `agent/workspace/out/` | files you make for them: a deliverable goes here, and `[name](out/name.ext)` names one |
 
 `agent/.git` is the history of that half: a fact appended to `log/` is committed, so what you remembered last month is
 recoverable.
@@ -23,7 +23,7 @@ recoverable.
 `service/` — the token hashes, the connector credentials, the transcript, the database. It is not mounted, so `bash`
 cannot read it, and a tool that tries reads a path that does not exist rather than a file that is denied.
 
-The server's environment is also not yours: the daemon your tools run under starts with an allowlist (`PATH`, `HOME`,
+The server's environment is not yours: the daemon your tools run under starts with an allowlist (`PATH`, `HOME`,
 `USER`, `LOGNAME`, `SHELL`, `LANG`, `LC_ALL`, `TZ`, `TMPDIR`), so a provider key cannot be printed from a script.
 
 ## What is installed

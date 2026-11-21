@@ -26,6 +26,7 @@ import {
 	REPLY_ENTRY_KIND,
 	splitAuthor,
 } from "../shared/contract.ts";
+import { displayName } from "./attachments.ts";
 import { replyRecordOf, textOfBlocks } from "./replies.ts";
 
 /**
@@ -318,19 +319,26 @@ function foldEntry(entry: EntryRecord, index: number, firstIndex: number, state:
 	}
 }
 
-/** The asset refs an entry carries, or `undefined` when it names none or the shape is not one this build wrote. */
+/**
+ * The asset refs an entry carries, or `undefined` when it names none or the shape is not one this build wrote.
+ *
+ * The entry's name is the one the file landed under, which is placement: `..` is a file on a device and a content id in
+ * the transcript. The wire gets a display name, and the row that names an id is still the only thing that crosses.
+ */
 function assetsOf(value: unknown): AssetRef[] | undefined {
 	if (!Array.isArray(value)) return undefined;
-	const refs = value.filter((item): item is AssetRef => {
-		if (typeof item !== "object" || item === null) return false;
-		const ref = item as Record<string, unknown>;
-		return (
-			typeof ref.id === "string" &&
-			typeof ref.name === "string" &&
-			typeof ref.mimeType === "string" &&
-			typeof ref.size === "number"
-		);
-	});
+	const refs = value
+		.filter((item): item is AssetRef => {
+			if (typeof item !== "object" || item === null) return false;
+			const ref = item as Record<string, unknown>;
+			return (
+				typeof ref.id === "string" &&
+				typeof ref.name === "string" &&
+				typeof ref.mimeType === "string" &&
+				typeof ref.size === "number"
+			);
+		})
+		.map((ref) => ({ ...ref, name: displayName(ref.name, ref.id) }));
 	return refs.length === 0 ? undefined : refs;
 }
 
@@ -360,10 +368,14 @@ function assetRecordOf(entry: EntryRecord):
 	};
 }
 
-/** Replace each `file:` link target the resolver stored with the `asset:` id it became. */
+/** Replace each link target the resolver stored with the `asset:` id it became, in either spelling of the target. */
 function rewriteLinks(text: string, links: Readonly<Record<string, string>>): string {
 	let rewritten = text;
-	for (const [from, to] of Object.entries(links)) rewritten = rewritten.split(`](${from})`).join(`](${to})`);
+	for (const [from, to] of Object.entries(links)) {
+		rewritten = rewritten.split(`](${from})`).join(`](${to})`);
+		// The record's key has no `file:`, and a message written for the older build has one in its text.
+		rewritten = rewritten.split(`](file:${from})`).join(`](${to})`);
+	}
 	return rewritten;
 }
 

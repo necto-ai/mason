@@ -31,6 +31,7 @@ import { MemoryStore } from "mason-client/store/memory";
 import { type ConversationState, connectorHost, errorCodeOf, MasonPeer, type PeerRef } from "mason-protocol";
 import WebSocket from "ws";
 import { mintConnectorCredential } from "../../src/server/connectors.ts";
+import type { RuntimeEnvManager } from "../../src/server/env.ts";
 import { type HousePaths, housePaths } from "../../src/server/house.ts";
 import type { RunningServer } from "../../src/server/main.ts";
 import { startServer } from "../../src/server/main.ts";
@@ -217,6 +218,8 @@ export async function serveConnector(
 		readonly integrations?: unknown;
 		/** A boot whose MCP servers are reached through an in-memory transport, as the headless proof does. */
 		readonly mcpTransport?: McpTransportFactory;
+		/** The machine tools run on, when a test brings its own: an SSH target, or one that holds a turn back. */
+		readonly env?: RuntimeEnvManager;
 	} = {},
 ): Promise<ServedConnector> {
 	const home = options.home ?? (await connectorHome());
@@ -235,6 +238,7 @@ export async function serveConnector(
 		...(options.attachmentBytes === undefined ? {} : { attachmentBytes: options.attachmentBytes }),
 		...(options.attachmentTtlMs === undefined ? {} : { attachmentTtlMs: options.attachmentTtlMs }),
 		...(options.mcpTransport === undefined ? {} : { mcpTransport: options.mcpTransport }),
+		...(options.env === undefined ? {} : { env: options.env }),
 		onReport: () => {},
 	});
 	const base = `http://127.0.0.1:${server.port}`;
@@ -287,6 +291,9 @@ export async function connectConnector(
 		states.push(state);
 	});
 	await connector.start();
+	// `start()` opens the link; a call before it is open is journaled as `pending`, which is the client's durability
+	// working, not what a test of the server's answer is about.
+	await until(() => connector.status().connections > 0, "the connector's socket");
 	return {
 		connector,
 		states,

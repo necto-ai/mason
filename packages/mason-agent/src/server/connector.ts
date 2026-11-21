@@ -22,9 +22,7 @@
  * nothing else; the config is read per request, so a revoke lands on the next connection rather than the next restart.
  */
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
 import type { IncomingMessage } from "node:http";
-import { basename, join } from "node:path";
 import { createHost, type Host, type Link, webSocketLink } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { ConversationView, SubmissionDraft } from "@earendil-works/pi-durable";
@@ -52,7 +50,7 @@ import {
 } from "mason-protocol";
 import type { WebSocket } from "ws";
 import { type AssetRef, CONNECTOR_ENTRY_KIND } from "../shared/contract.ts";
-import { ATTACHMENT_LIMIT, type AttachmentStore, displayName } from "./attachments.ts";
+import { ATTACHMENT_LIMIT, type AttachmentStore, attachmentPath, refusalLine } from "./attachments.ts";
 import { commandTarget, runCommand } from "./commands.ts";
 import { authenticateConnector, type ConnectorGrant, connectorGrantFor, ownerRefusal } from "./connectors.ts";
 import { currentHouse } from "./house.ts";
@@ -81,8 +79,6 @@ export interface ConnectorPrincipal {
 
 export interface ConnectorDoorOptions {
 	readonly runtime: AgentRuntime;
-	/** Where an uploaded file is written for the model to read, when a submission carries one. */
-	readonly workspaceDir: string;
 	readonly attachments: AttachmentStore;
 	/** One limiter for the process, shared with the attachment routes: a class budget is the connector's, not a socket's. */
 	readonly limiter: FireLimiter;
@@ -364,57 +360,40 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 	 * The words as the model reads them, plus the files they sent.
 	 *
 	 * Text and markdown blocks become the message, unprefixed: the connector's credential already says who is speaking,
-	 * and one person's bot has nobody to tell apart. A file block is fetched from the asset store and written into the
-	 * agent's inbox, because a content id is not something a `read` can open; an image also travels as an image block, so
-	 * the model sees it without a tool call. Every stored file also becomes an `AssetRef`, which is what the user row
-	 * carries and the download route serves: the reader gets the same bytes back from history.
+	 * and one person's bot has nobody to tell apart. A file block becomes identity only — the sidecar's id, name, type
+	 * and size — and a line naming the path the turn will put it at. Nothing is written here: the bytes cross through the
+	 * target's execution environment at turn start (`inbox.ts`), because a submission must not touch a machine this
+	 * process cannot reach, and an image is inlined only for a request, never committed as base64.
+	 *
+	 * The name is the sidecar's, so the line, the entry and the materialiser all spell one path. The row shows it through
+	 * `displayName` in the projection: a name that is a directory name is still a file on disk and a content id in the
+	 * transcript.
 	 */
 	async function userInput(
 		name: string,
 		blocks: readonly ContentBlock[],
 	): Promise<{ content: UserInput; assets: AssetRef[] }> {
 		const text: string[] = [];
-		const images: UserInputImage[] = [];
 		const assets: AssetRef[] = [];
 		for (const block of blocks) {
 			if (block.type === "text" || block.type === "markdown" || block.type === "notice") {
 				text.push(block.text);
 				continue;
 			}
-			const read = await options.attachments.read(name, block.contentId);
-			if (read.status !== "ok") {
-				text.push(`[a file could not be attached: ${read.status === "expired" ? "it expired" : "no such upload"}]`);
+			const found = await options.attachments.lookup(name, block.contentId);
+			if (found.status !== "ok") {
+				text.push(refusalLine(found.status));
 				continue;
 			}
-			const path = await attachmentPath(block.contentId, block.name ?? read.attachment.meta.name);
-			await writeFile(path, read.attachment.bytes, { mode: 0o600 });
-			const type = block.mimeType ?? read.attachment.meta.mimeType;
-			if (type.startsWith("image/")) {
-				images.push({ type: "image", data: read.attachment.bytes.toString("base64"), mimeType: type });
-			}
-			assets.push({
-				id: read.attachment.meta.contentId,
-				name: displayName(block.name ?? read.attachment.meta.name, read.attachment.meta.contentId),
-				mimeType: type,
-				size: read.attachment.meta.size,
-			});
-			text.push(`[file: ${path} — ${type}, ${read.attachment.meta.size} bytes]`);
+			const stored = found.meta;
+			const type = block.mimeType ?? stored.mimeType;
+			// The sidecar's name is what the file was stored as; a block name only fills the gap when the upload named none.
+			// One name goes to the row, the model's line and the write, so the path the line names is the path that lands.
+			const fileName = stored.name ?? block.name ?? stored.contentId;
+			assets.push({ id: stored.contentId, name: fileName, mimeType: type, size: stored.size });
+			text.push(`[file: ${attachmentPath("~", stored.contentId, fileName)} — ${type}, ${stored.size} bytes]`);
 		}
-		const body = text.join("\n");
-		const content = images.length === 0 ? body : [{ type: "text" as const, text: body }, ...images];
-		return { content, assets };
-	}
-
-	/** Where one attachment is written for `read`: one directory per upload, its name kept but never its path. */
-	async function attachmentPath(contentId: string, name: string | undefined): Promise<string> {
-		const directory = join(options.workspaceDir, "inbox", contentId);
-		await mkdir(directory, { recursive: true, mode: 0o700 });
-		const kept = basename(name ?? "file")
-			.replace(/[^\w.-]+/g, "_")
-			.slice(0, 80);
-		// `.` and `..` are directory names, not file names: a submission whose name is one still lands as a file.
-		const safe = kept === "" || kept === "." || kept === ".." ? "file" : kept;
-		return join(directory, safe);
+		return { content: text.join("\n"), assets };
 	}
 
 	/**
@@ -558,18 +537,7 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 	}
 }
 
-interface UserInputImage {
-	readonly type: "image";
-	readonly data: string;
-	readonly mimeType: string;
-}
-
-interface UserInputText {
-	readonly type: "text";
-	readonly text: string;
-}
-
-type UserInput = string | Array<UserInputText | UserInputImage>;
+type UserInput = string;
 
 /** The origin the transcript keeps: the connector, the address it minted, and the medium's own message id. */
 function originOf(

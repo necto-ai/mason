@@ -18,13 +18,20 @@
  * resend happens, and an id that died with the process would turn a redelivery into a lost photograph.
  *
  * Everything here is scoped by owner and checked on the way in: an id that is not `cnt_<hex>` never reaches the
- * filesystem, one over the cap is refused before it is stored, and a read answers `missing` or `expired`. Expiry removes
- * the bytes and keeps the sidecar, so a client that asks for an old asset is told `410` rather than `404` — the message
- * survives its files.
+ * filesystem, one over the cap is refused before it is stored, and a read answers `missing`, `expired` or `corrupt`.
+ * Expiry removes the bytes and keeps the sidecar, so a client that asks for an old asset is told `410` rather than `404`
+ * — the message survives its files. The sidecar also records the sha256 of the bytes, so a truncated or replaced file is
+ * a refusal rather than a short answer: the hash is what makes the store's bytes the sender's bytes.
+ *
+ * The inbound direction is the one place a turn's files land on a device: `materialise()` writes through the
+ * `ExecutionEnv`, so a connector never touches a disk it cannot reach. A submission commits identity only.
  */
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import type { Context } from "@earendil-works/chord";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
+import type { AssetRef } from "../shared/contract.ts";
 
 /** The protocol's default cap: enough for a phone video, far below what a sender may buffer into a socket. */
 export const ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -57,6 +64,8 @@ export interface AttachmentMeta {
 	/** The uploader of an `in` asset; absent on a turn's `out` asset. */
 	readonly connector?: string;
 	readonly size: number;
+	/** Hex sha256 of the bytes: absent only on a sidecar written before the store hashed what it kept. */
+	readonly sha256?: string;
 	readonly mimeType: string;
 	readonly name?: string;
 	readonly createdAt: number;
@@ -72,8 +81,16 @@ export type AttachmentRead =
 	| { readonly status: "ok"; readonly attachment: StoredAttachment }
 	| { readonly status: "missing" }
 	| { readonly status: "expired" }
+	/** The sidecar's bytes are not the bytes it recorded: a truncation or a replacement, never a short answer. */
+	| { readonly status: "corrupt" }
 	/** The asset exists and this connector's grant does not read it. */
 	| { readonly status: "refused" };
+
+/** What an upload's identity says without its bytes: the sidecar the submission renders and the turn materialises. */
+export type AttachmentLookup =
+	| { readonly status: "ok"; readonly meta: AttachmentMeta }
+	| { readonly status: "missing" }
+	| { readonly status: "expired" };
 
 export class AttachmentStore {
 	readonly #root: string;
@@ -141,6 +158,22 @@ export class AttachmentStore {
 	}
 
 	/**
+	 * One upload's sidecar, without its bytes: what a submission commits and the turn-start materialiser reads.
+	 *
+	 * The same scoping as `read`: an id another connector uploaded is `missing`, because an id that is not this sender's
+	 * is not this sender's to confirm. Expiry is a lookup's answer too — a message that names an expired file should say
+	 * so where it is written, not after a failed copy.
+	 */
+	async lookup(connector: string, contentId: string): Promise<AttachmentLookup> {
+		const found = await this.#locate(contentId);
+		if (found === undefined || found.meta.direction !== "in" || found.meta.connector !== connector) {
+			return { status: "missing" };
+		}
+		if (found.meta.expiresAt <= this.#now()) return { status: "expired" };
+		return { status: "ok", meta: found.meta };
+	}
+
+	/**
 	 * The bytes behind one id, for the download route.
 	 *
 	 * A connector holding the `user` grant reads its conversation's assets in both directions. A connector without one
@@ -174,6 +207,7 @@ export class AttachmentStore {
 			contentId,
 			...identity,
 			size: bytes.byteLength,
+			sha256: createHash("sha256").update(bytes).digest("hex"),
 			mimeType: meta.mimeType === undefined || meta.mimeType === "" ? "application/octet-stream" : meta.mimeType,
 			...(meta.name === undefined || meta.name === "" ? {} : { name: meta.name }),
 			createdAt: now,
@@ -214,11 +248,23 @@ export class AttachmentStore {
 		return undefined;
 	}
 
-	/** The bytes of a located asset, or `expired` once its sidecar says so. */
+	/**
+	 * The bytes of a located asset: `expired` once its sidecar says so, `corrupt` when they are not the bytes it recorded.
+	 *
+	 * The sidecar's size is checked first and its hash second, so a file truncated by a full disk and a file replaced by
+	 * something else are both refusals. A sidecar written before the store kept a hash still checks its size.
+	 */
 	async #bytesOf(found: { readonly meta: AttachmentMeta; readonly directory: string }): Promise<AttachmentRead> {
 		if (found.meta.expiresAt <= this.#now()) return { status: "expired" };
 		try {
 			const bytes = await readFile(join(found.directory, found.meta.contentId));
+			if (bytes.byteLength !== found.meta.size) return { status: "corrupt" };
+			if (
+				found.meta.sha256 !== undefined &&
+				createHash("sha256").update(bytes).digest("hex") !== found.meta.sha256
+			) {
+				return { status: "corrupt" };
+			}
 			return { status: "ok", attachment: { meta: found.meta, bytes } };
 		} catch {
 			return { status: "missing" };
@@ -288,7 +334,8 @@ function metaOf(value: unknown): AttachmentMeta | undefined {
 		typeof raw.mimeType !== "string" ||
 		typeof raw.createdAt !== "number" ||
 		typeof raw.expiresAt !== "number" ||
-		(raw.name !== undefined && typeof raw.name !== "string")
+		(raw.name !== undefined && typeof raw.name !== "string") ||
+		(raw.sha256 !== undefined && typeof raw.sha256 !== "string")
 	) {
 		return undefined;
 	}
@@ -299,11 +346,110 @@ function metaOf(value: unknown): AttachmentMeta | undefined {
 		owner,
 		...(direction === "in" ? { connector: raw.connector as string } : {}),
 		size: raw.size,
+		...(raw.sha256 === undefined ? {} : { sha256: raw.sha256 }),
 		mimeType: raw.mimeType,
 		...(raw.name === undefined ? {} : { name: raw.name }),
 		createdAt: raw.createdAt,
 		expiresAt: raw.expiresAt,
 	};
+}
+
+/** The inbox, relative to the device's home: one directory per upload, so two files of one name never collide. */
+export const INBOX = "inbox";
+
+/**
+ * Where one inbound file lives on the device: the one spelling of an inbox path, for the line the model reads and for
+ * the write that puts the bytes there.
+ *
+ * The caller passes the home: `~` for both, because the device's own home is where the line says the file is, and the
+ * execution environment resolves `~` on the machine the tools run on. Everything below the home is sanitised to one
+ * segment — an upload's name is shown, never used as a path — and a name that is a directory name (or none at all)
+ * falls back to `file`.
+ */
+export function attachmentPath(home: string, contentId: string, name: string | undefined): string {
+	return join(home, INBOX, contentId, safeFileName(name));
+}
+
+/** The leaf an upload lands under: its name reduced to one path segment, and `file` when it names no file. */
+export function safeFileName(name: string | undefined): string {
+	const base = basename(name ?? "")
+		.replace(/[^\w.-]+/g, "_")
+		.slice(0, 80);
+	return base === "" || base === "." || base === ".." ? "file" : base;
+}
+
+/** The line `userInput` renders for a ref that cannot land, and the one the turn-start materialiser adds. */
+export function refusalLine(status: "missing" | "expired" | "corrupt" | "unreadable"): string {
+	const why =
+		status === "expired"
+			? "it expired"
+			: status === "missing"
+				? "no such upload"
+				: status === "corrupt"
+					? "its bytes could not be read back"
+					: "it could not be written to the machine";
+	return `[a file could not be attached: ${why}]`;
+}
+
+/** What one inbound ref's landing says: where it is, or why there is nothing there. */
+export type Materialised =
+	| { readonly status: "ok"; readonly path: string }
+	| { readonly status: "missing" | "expired" | "corrupt" | "unreadable" };
+
+/**
+ * Put one turn's uploads on the device, through its execution environment.
+ *
+ * This is the inbound half of the boundary: the connector commits identity at submit and never opens a disk, and the
+ * bytes land here, on the machine the tools run on. A file already there with the recorded size is left alone — the
+ * check is a stat rather than a copy, so a second request of the same turn does not re-copy bytes it already read.
+ * Everything else is read from the store (which verifies the sha256), written, and read back for its size. One refusal
+ * per ref, never a short file: the caller renders the same line for each. `ExecutionEnv` has no mode parameter, so the
+ * device's umask decides the mode: this does not promise the `0600`/`0700` the old local write set.
+ */
+export async function materialise(
+	env: ExecutionEnv,
+	store: AttachmentStore,
+	connector: string,
+	refs: readonly AssetRef[],
+	context: Context,
+): Promise<readonly Materialised[]> {
+	const results: Materialised[] = [];
+	for (const ref of refs) {
+		const path = attachmentPath("~", ref.id, ref.name);
+		const present = await env.fileInfo(path, context);
+		if (present.ok && present.value.kind === "file" && present.value.size === ref.size) {
+			results.push({ status: "ok", path });
+			continue;
+		}
+		const read = await store.readGranted(connector, true, ref.id);
+		if (read.status !== "ok") {
+			// `readGranted(connector, true, …)` never refuses: a refusal here is an id that is not there.
+			results.push({ status: read.status === "refused" ? "missing" : read.status });
+			continue;
+		}
+		const bytes = read.attachment.bytes;
+		if (bytes.byteLength !== ref.size) {
+			results.push({ status: "corrupt" });
+			continue;
+		}
+		const made = await env.createDir(dirname(path), { recursive: true }, context);
+		if (!made.ok) {
+			results.push({ status: "unreadable" });
+			continue;
+		}
+		const written = await env.writeFile(path, bytes, context);
+		if (!written.ok) {
+			results.push({ status: "unreadable" });
+			continue;
+		}
+		const writtenInfo = await env.fileInfo(path, context);
+		if (!writtenInfo.ok || writtenInfo.value.size !== bytes.byteLength) {
+			results.push({ status: "unreadable" });
+			continue;
+		}
+		results.push({ status: "ok", path });
+	}
+	return results;
 }
 
 /** A filename from a stored record or a file path, reduced to a display name: it is shown, never used as a path. */

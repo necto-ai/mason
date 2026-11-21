@@ -6,6 +6,10 @@
  * still shared in TypeScript: the entry kinds, the two continuations a gate adds to a turn, and the shapes the
  * projection builds. The projection is a read-only transcript representation; nothing consumes it inside Mason today.
  */
+import type { AssetRef } from "mason-protocol";
+
+// One spelling of a row's file, from the package that publishes it: the wire and the projection cannot disagree.
+export type { AssetRef };
 
 /** A proactive hook trigger. */
 export const HOOK_ENTRY_KIND = "app.hook";
@@ -130,8 +134,6 @@ export function splitAuthor(text: string): { readonly text: string; readonly aut
  * The array on a row is authoritative: a client renders these and resolves each `asset:<id>` link with the same
  * credential it reads the conversation with. Name and type are for display; the bytes are the download route's.
  */
-export type AssetRef = { id: string; name: string; mimeType: string; size: number };
-
 export type TranscriptItem =
 	| { kind: "user"; id: string; text: string; author?: string; at?: number; assets?: AssetRef[] }
 	| {

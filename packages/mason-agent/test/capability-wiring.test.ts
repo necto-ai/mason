@@ -30,13 +30,11 @@ test("the ocr skill ships with mason, so every bot gets it without a person copy
 test("the per-boot extensions a boot builds are the list the surface renders, and an inline addition fails", () => {
 	// The document is generated from this list, and the boot refuses a built set that does not match it: a per-boot
 	// extension added inline and left out of the constant stops every boot, instead of silently escaping `SURFACE.md`.
-	assert.doesNotThrow(() =>
-		assertPerBootExtensions([PER_BOOT_EXTENSIONS[0], MCP_EXTENSION_NAME, PER_BOOT_EXTENSIONS[1]]),
-	);
+	assert.doesNotThrow(() => assertPerBootExtensions([...PER_BOOT_EXTENSIONS, MCP_EXTENSION_NAME]));
 	assert.throws(
 		() => assertPerBootExtensions([...PER_BOOT_EXTENSIONS, "extra"]),
 		/not in the list: extra/,
-		"a third while the list names two",
+		"a name the document does not render fails the boot",
 	);
 	assert.doesNotThrow(
 		() => assertPerBootExtensions([...PER_BOOT_EXTENSIONS]),
@@ -44,7 +42,7 @@ test("the per-boot extensions a boot builds are the list the surface renders, an
 	);
 	assert.throws(
 		() => assertPerBootExtensions([PER_BOOT_EXTENSIONS[0]]),
-		/built by no boot here: codemode/,
+		new RegExp(`built by no boot here: ${PER_BOOT_EXTENSIONS.slice(1).join(", ")}`),
 		"an unconditional per-boot extension the boot did not build fails",
 	);
 });

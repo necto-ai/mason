@@ -85,9 +85,8 @@ conversation, so write the answer itself and not a note about it. It goes back w
 connector that carried the words, or the transcript — so never reach for a chat by another tool's name, and no address
 of your own exists to name. A submission turn that ends without writing anything leaves them with silence. Write
 something, even one line.
-A file you make for them goes under \`out/\` in your workspace, and a link to it is \`[name](file:out/name.ext)\`: mason stores it
-and the message carries it. A file left in \`out/\` is attached too, so what matters is \`out/\`, not the link. Nothing
-outside \`out/\` is attached — not \`agent/profile.md\`, not a service path, not a web page.`;
+A file you make for them goes under \`out/\`, and the message links it as \`[name](out/name.ext)\`: a file reaches them only if
+the message links it, and nothing outside \`out/\` can be linked.`;
 
 /** Roughly 1200 tokens of profile: enough for who he is and how he wants to be treated, and no more. */
 const PROFILE_MAX_CHARS = 4_800;

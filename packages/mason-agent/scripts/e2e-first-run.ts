@@ -299,7 +299,7 @@ function scripted(): ResolvedModel {
 			[fauxToolCall("write", { path: "out/report.md", content: "hello from the outbox" }, { id: "w1" })],
 			{ stopReason: "toolUse" },
 		),
-		fauxAssistantMessage(fauxText("[report](file:out/report.md)")),
+		fauxAssistantMessage(fauxText("[report](out/report.md)")),
 	]);
 	return { models, ref: { provider: "faux", modelId: "faux-1" }, faux: true };
 }

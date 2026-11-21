@@ -3,8 +3,8 @@
 		"packages/mason-agent/bin": 92,
 		"packages/mason-agent/evals": 568,
 		"packages/mason-agent/scripts": 2056,
-		"packages/mason-agent/src": 7800,
-		"packages/protocol/src": 283,
+		"packages/mason-agent/src": 8070,
+		"packages/protocol/src": 284,
 		"packages/client/src": 1545,
 		"scripts": 599
 	}
