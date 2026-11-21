@@ -99,7 +99,9 @@ describe("mason chat", () => {
 			(error: { code?: number; stderr?: string }) => ({ code: error.code ?? 1, stderr: error.stderr ?? "" }),
 		);
 		assert.equal(result.code, 1);
-		assert.match(result.stderr, /start it with `mason up`/);
+		// The command `command-line.ts` spells, not `mason up`: an operator in the image has no `mason` on `PATH`, and this
+		// line is one they read there.
+		assert.match(result.stderr, /start it with `node --experimental-strip-types \S*\/src\/server\/main\.ts`/);
 	});
 
 	test("a console grant written into a home that already has a user face names the refused home", async () => {

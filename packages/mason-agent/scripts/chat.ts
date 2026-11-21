@@ -26,6 +26,7 @@ import { createInterface } from "node:readline/promises";
 import { type ConnectorStore, createUserClient, nodeWebSocketLink, type StoreEntry } from "mason-client";
 import { CONTROL_OPS, type ControlOp } from "mason-protocol";
 import { writeFileAtomic } from "../src/server/atomic.ts";
+import { UP } from "../src/server/command-line.ts";
 import type { ConnectorGrant } from "../src/server/connectors.ts";
 import { mintConnectorCredential } from "../src/server/connectors.ts";
 import { type HousePaths, housePaths } from "../src/server/house.ts";
@@ -290,7 +291,7 @@ export async function runChat(argv: readonly string[]): Promise<number> {
 		console.error(
 			`[chat] cannot open ${socketUrl(args.url)}: ${error instanceof Error ? error.message : String(error)}`,
 		);
-		console.error("[chat] if mason is not running, start it with `mason up`.");
+		console.error(`[chat] if mason is not running, start it with \`${UP}\`.`);
 		await connector.stop().catch(() => {});
 		return 1;
 	}
@@ -332,7 +333,7 @@ export async function runChat(argv: readonly string[]): Promise<number> {
 			reply,
 			lost.then((reason) => {
 				console.error(`[chat] cannot open ${socketUrl(args.url)}: ${reason}`);
-				console.error("[chat] if mason is not running, start it with `mason up`.");
+				console.error(`[chat] if mason is not running, start it with \`${UP}\`.`);
 				return "";
 			}),
 		]);

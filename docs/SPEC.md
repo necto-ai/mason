@@ -253,10 +253,11 @@ Everything the agent is made of is a file Denis can read, diff and revert, in on
 
 **The boundary is a mount, and a deployment is what makes it.** The repository ships one shape: the halves are sibling
 directories on one filesystem, and a tool that can read one can read the other. A deployment that mounts `agent/` and not
-`service/` is what makes the split meaningful — the tool machine has no `service/`, so `bash` cannot reach the connector
-credentials, the database, the SSH key or the provider credential, for every tool and not only policy-honouring ones.
-Writable roots would hold it without a mount. `service/` is unversioned. `agent/.git` is the memory repo, created when
-the home is first opened, and a home from before the split is refused at boot rather than migrated.
+`service/` makes the split meaningful — the tool machine has no `service/`, so `bash` cannot reach the connector
+credentials, the database, the SSH key or the provider credential, for every tool, not only policy-honouring ones.
+`docker/` runs both halves in one container, for tests and demos only
+([ADR-0016](adr/0016-one-container-is-not-a-tool-machine.md)). `service/` is unversioned. `agent/.git` is the memory
+repo, created when the home is first opened, and a home from before the split is refused at boot rather than migrated.
 
 The home is `0700` and so is every directory in it; `soul.md`, `config.json`, `integrations.json` and
 `agent.sqlite` are `0600`. It holds a transcript of everything Denis said, which is not a thing to leave readable by
@@ -472,8 +473,8 @@ A home upgraded from a build that still had the GitHub integration also carries 
 moved `data/` wholesale, and nothing reads that file now — its secrets open nothing — so it is safe to delete.
 
 **What this does not do.** It does not sandbox the process: a tool still runs as the server's user, with that user's
-files. That is what the machine boundary in the deployment is for, and why a tool machine is separate from the server at
-all.
+files. That is what the machine boundary in the deployment is for ([ADR-0016](adr/0016-one-container-is-not-a-tool-machine.md)),
+and why a tool machine is separate from the server at all.
 
 ### 4.1d The connector door
 

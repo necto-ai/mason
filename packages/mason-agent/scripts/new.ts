@@ -13,6 +13,7 @@
  */
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
+import { CHAT, UP } from "../src/server/command-line.ts";
 import { commonReady } from "../src/server/common.ts";
 import { mintConnectorCredential } from "../src/server/connectors.ts";
 import { doctorExitCode, formatCheck, runDoctor } from "../src/server/doctor.ts";
@@ -35,7 +36,7 @@ export function usage(): string {
   <name>                 lowercase letters, digits and dashes; it is the directory under the root
   --help                 this
 
-  next: mason up, or mason chat, which talks to the bot from this terminal.`;
+  next: \`${UP}\` runs the server; \`${CHAT}\` talks to the bot from this terminal.`;
 }
 
 export function parseArgs(argv: readonly string[]): NewArgs {
@@ -91,7 +92,7 @@ export async function runNew(
 		for (const check of checks) console.log(`[new] ${formatCheck(check)}`);
 		const failed = checks.filter((check) => !check.ok).length;
 		console.log(`[new] ${checks.length} checks: ${checks.length - failed} ok, ${failed} failed`);
-		console.log("[new] next: mason up, or `mason chat` to talk to it from this terminal");
+		console.log(`[new] next: \`${UP}\` runs the server; \`${CHAT}\` talks to it from this terminal`);
 		return doctorExitCode(checks);
 	} catch (error) {
 		console.error(`[new] ${error instanceof Error ? error.message : String(error)}`);

@@ -4,7 +4,7 @@ name: ci
 # type error in a test and nothing noticed: the suite runs with `--experimental-strip-types`, which erases types without
 # reading them, and `tsc` was not a dependency of the project at all.
 #
-# Five jobs rather than one, because the suite is the long pole and the rest of the checks do not read its output. The
+# Six jobs rather than one, because the suite is the long pole and the rest of the checks do not read its output. The
 # numbers are this runner's, measured on one commit. Node's default with two cores is one test file at a time
 # (`availableParallelism() - 1`) and the suite took 135 seconds that way. Two at a time took 66 to 118 depending on the
 # run, three took 76 to 89 and four took 115 to 140: past two, the contention costs more than the overlap wins. Two
@@ -123,6 +123,17 @@ jobs:
       - run: bash scripts/setup.sh
       - run: npm run e2e:first-run
         timeout-minutes: 5
+
+  # The image as a deployment runs it: it builds, an empty home with no credential is refused by name (a server that
+  # boots without a model is the failure the script exists for), and a home on the offline provider answers
+  # `/api/health` and stops on SIGTERM with exit 0, which is what proves the entrypoint `exec`s node as PID 1.
+  # `scripts/boot-test.sh` chooses the engine itself: docker here, podman on a NixOS host.
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/boot-test.sh
 
   # The flake, because it is a second way to install mason and nothing else would notice it rot. `buildNpmPackage`
   # reruns the npm dependency cache and the build from scratch here — 3 minutes of work — which is the price of a second

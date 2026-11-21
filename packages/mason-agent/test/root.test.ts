@@ -10,12 +10,14 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
+import { INIT, NEW } from "../src/server/command-line.ts";
 import {
 	botHome,
 	expandHome,
 	readRoot,
 	refuseHomeEnv,
 	refuseLegacyRoot,
+	refuseRootAsHome,
 	resolveBot,
 	rootPath,
 } from "../src/server/root.ts";
@@ -109,7 +111,42 @@ describe("the bot a command is about", () => {
 	test("a root with no bot says the command that creates one", async () => {
 		const root = await tempRoot();
 		assert.throws(() => resolveBot(readRoot(root)), /has no bot yet/);
-		assert.throws(() => resolveBot(readRoot(root)), /has no bot yet: run `mason init`/);
+		// The commands are `command-line.ts`'s, not `mason init`/`mason new`: the image has no `mason` on `PATH` and no
+		// `dist`, so the sentence names the two scripts that run where it is read.
+		assert.throws(
+			() => resolveBot(readRoot(root)),
+			(error: unknown) => error instanceof Error && error.message.includes(INIT) && error.message.includes(NEW),
+		);
+	});
+});
+
+/**
+ * A root opened as one home. `common/` is the whole signal and the bot beside it is only named: `mason init` writes the
+ * store before `mason new` makes the bot, so keyed on the bot the guard let the shape a first run actually produces
+ * through, and `ensureHouse` wrote `agent/` and `service/` into the root. `scripts/boot-test.sh` pins the same two
+ * shapes in the image, and digests the bot-less tree before and after the refusal.
+ */
+describe("a root addressed as one home", () => {
+	test("a root holding common/ and a bot is refused, naming the bot it holds", async () => {
+		const root = await tempRoot();
+		await mkdir(join(root, "common"), { recursive: true });
+		await bot(root, "alice");
+		assert.throws(
+			() => refuseRootAsHome(root),
+			/is a mason root, not one home: it holds common\/ and the bot alice\./,
+		);
+	});
+
+	test("a root holding common/ and no bot yet is refused the same way", async () => {
+		const root = await tempRoot();
+		await mkdir(join(root, "common"), { recursive: true });
+		assert.throws(() => refuseRootAsHome(root), /is a mason root, not one home: it holds common\/\./);
+	});
+
+	test("a bot's own home is not a root: it holds no common/, and it boots", async () => {
+		const root = await tempRoot();
+		const home = await bot(root, "alice");
+		assert.doesNotThrow(() => refuseRootAsHome(home));
 	});
 });
 

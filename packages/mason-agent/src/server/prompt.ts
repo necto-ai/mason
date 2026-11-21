@@ -8,9 +8,11 @@
  * configuration, a count of the tools a script can call, or a constant in this file). No other extension contributes a
  * section, so an audit reads one file and a test fails if anything else appears.
  *
- * Which half a section reads from is not cosmetic. `service/` is never mounted into the tool machine, so the soul is a
- * file the bot cannot see, let alone rewrite; `agent/` is on the tool machine, so the profile and the skills index are
- * the bytes the agent can edit, read back through the same environment its tools use.
+ * Which half a section reads from is not cosmetic. A deployment mounts `agent/` into the tool machine and `service/`
+ * nowhere near it, so the soul is a file the bot cannot see, let alone rewrite, and the profile and the skills index are
+ * the bytes the agent can edit, read back through the same environment its tools use. The image in `docker/` mounts
+ * neither half, so a tool there can read `service/soul.md`: one container is not a tool machine (ADR-0016), and this is
+ * a promise about the production shape.
  *
  * The order is the prompt's shape: identity, then voice, then the environment, then what the agent knows, then what it
  * can reach, and the delivery rule closest to the turn.

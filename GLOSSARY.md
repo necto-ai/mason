@@ -74,6 +74,19 @@ _Avoid_: cwd (that is the path, not the place), sandbox
 Dated facts, one per line, appended as they are learned and never rewritten.
 _Avoid_: journal, diary, memory
 
+## The tool machine
+
+**share server**:
+A throwaway sshd that serves one directory and nothing else: one process per connection, chrooted to the share root,
+`internal-sftp` as the forced command, no shell, no pty, no forwarding. What it writes is the host user's own write,
+which is why the host's `fs.watch` fires for a guest edit.
+_Avoid_: file server, mount server, the host's sshd (an `authorized_keys` line grants the whole account)
+
+**share root**:
+The one host directory a share server is chrooted to: `agent/`, never the home above it. Every path a guest names
+resolves inside it, so the sibling `service/` is out of reach by construction rather than by policy.
+_Avoid_: export, mount point (that is the path in the guest), shared folder
+
 ## The prompt
 
 **section**:

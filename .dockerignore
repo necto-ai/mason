@@ -1,0 +1,22 @@
+# The build context is the repository root. Keep out what the image does not run: dependencies (the Dockerfile installs
+# them from the lockfile), build output, a developer's homes and state, and the git directory.
+.git
+.gitignore
+node_modules
+packages/*/node_modules
+# The image runs the server: tests and eval scenarios are not part of it, and a fixture's placeholder key is still a
+# key-shaped string in a layer a stranger pulls.
+packages/*/test
+packages/mason-agent/evals
+dist
+packages/*/dist
+.devenv*
+.direnv
+.data*
+.scratch
+.dev
+.release
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.tgz

@@ -19,6 +19,7 @@
 import { type Dirent, existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { INIT, NEW } from "./command-line.ts";
 
 /** A name in this root is a directory name, so it is the same grammar an integration name and a connector name use. */
 export const BOT_NAME = /^[a-z0-9][a-z0-9-]*$/;
@@ -87,6 +88,11 @@ function isBot(home: string): boolean {
 	return existsSync(join(home, "agent")) || existsSync(join(home, "service"));
 }
 
+/** Whether one entry of a root is a bot: a directory that is not `common/`, not hidden, with a half inside it. */
+function isBotEntry(entry: Dirent, root: string): boolean {
+	return entry.isDirectory() && entry.name !== COMMON && !entry.name.startsWith(".") && isBot(join(root, entry.name));
+}
+
 /**
  * A root whose halves sit at the root itself is one home, not a fleet, and this version does not move it.
  *
@@ -133,17 +139,21 @@ function carriesFiles(path: string): boolean {
  * bots — after which every command refuses, about directories the tool just made. `mason prompt` did exactly that, and
  * the cost was permanent until somebody deleted the halves by hand. The check lives here because `ensureHouse` is the
  * only writer, so every verb that could do it is covered by one refusal.
+ *
+ * `common/` is the whole test, and the bot beside it is only named. Keyed on the bot, the guard let a root that holds
+ * nothing but `common/` through: `mason init` writes the store before `mason new` makes the bot, so a `MASON_HOME` naming
+ * that root booted, `ensureHouse` wrote the halves into it, and every boot after that refused about two directories mason
+ * made. `test/root.test.ts` pins both directions, and `scripts/boot-test.sh` the bot-less one in the image.
  */
 export function refuseRootAsHome(home: string): void {
 	if (!existsSync(join(home, COMMON))) return;
-	const bots = readEntries(home).filter(
-		(entry) =>
-			entry.isDirectory() && entry.name !== COMMON && !entry.name.startsWith(".") && isBot(join(home, entry.name)),
-	);
-	if (bots.length === 0) return;
+	const bots = readEntries(home)
+		.filter((entry) => isBotEntry(entry, home))
+		.map((bot) => bot.name);
+	const holds = bots.length === 0 ? `${COMMON}/` : `${COMMON}/ and the bot ${bots.join(", ")}`;
 	throw new Error(
-		`${home} is a mason root, not one home: it holds ${COMMON}/ and the bot ${bots.map((bot) => bot.name).join(", ")}. ` +
-			"Set MASON_HOME to the home you mean. Nothing was created.",
+		`${home} is a mason root, not one home: it holds ${holds}. Set MASON_HOME to the home you mean. ` +
+			"Nothing was created.",
 	);
 }
 
@@ -157,9 +167,9 @@ export function readRoot(root = rootPath()): MasonRoot {
 	const resolved = expandHome(root);
 	refuseLegacyRoot(resolved);
 	const names = readEntries(resolved)
-		.filter((entry) => entry.isDirectory() && entry.name !== COMMON && !entry.name.startsWith("."))
+		.filter((entry) => isBotEntry(entry, resolved))
 		.map((entry) => entry.name)
-		.filter((name) => BOT_NAME.test(name) && isBot(join(resolved, name)))
+		.filter((name) => BOT_NAME.test(name))
 		.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 	return {
 		root: resolved,
@@ -206,7 +216,7 @@ export function resolveBot(root: MasonRoot): BotTarget {
 	if (only !== undefined && root.bots.length === 1) return { root: root.root, name: only.name, home: only.home };
 	if (root.bots.length === 0)
 		throw new Error(
-			`${root.root} has no bot yet: run \`mason init\` to initialise the root, then \`mason new <name>\` to create ` +
+			`${root.root} has no bot yet: run \`${INIT}\` to initialise the root, then \`${NEW} <name>\` to create ` +
 				"the first one.",
 		);
 	throw new Error(

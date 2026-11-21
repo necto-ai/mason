@@ -85,7 +85,13 @@ test("a root with no bot refuses, and names the command that creates one", async
 	const doctor = await mason(["doctor"], directory);
 	assert.equal(doctor.code, 1);
 	assert.match(doctor.stderr, /has no bot yet/);
-	assert.match(doctor.stderr, /mason new/);
+	// The sentence is `root.ts`'s, and the command in it is the script `command-line.ts` spells rather than `mason new`:
+	// an operator in the image has no `mason` on `PATH`, and the sentence has to be true where it is read.
+	assert.match(
+		doctor.stderr,
+		/scripts\/new\.ts <name>/,
+		"the command that makes the bot, spelled for where this runs",
+	);
 });
 
 test("a root whose halves sit at the root is refused on its names, creating nothing", async () => {

@@ -213,7 +213,8 @@ test("the tone section is rules about a reply, not a banned-word list", async ()
 /**
  * The guards are the wording, and the wording is what the research measured a difference with: the log line rather than
  * the skill, a description short enough for a resident index, a skill retired by naming what replaced it. What code can
- * enforce of them is enforced elsewhere (the tool machine mounts only `agent/`); the rest is pinned here as text.
+ * enforce of them is enforced elsewhere: `agent/` is what a deployment mounts, so `service/soul.md` is not reachable
+ * from a tool there (ADR-0016 puts the image outside that claim); the rest is pinned here as text.
  */
 test("the reflect section is what a long turn owes the next one, guards included", async () => {
 	const rendered = await renderSection(sectionOf("reflect"));
