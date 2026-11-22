@@ -1,15 +1,3 @@
-/**
- * The reader never gets silence for a submission.
- *
- * What the model writes is the message, so there is no call whose success the gate could count. The gate asks a
- * different question: did the turn's final answer carry text? A submission turn that ends without any continues once
- * with a reminder; a second silent answer shows the reader a notice instead of nothing; a hook or event turn may stay
- * silent and records no notice. The reminder itself is never part of the transcript.
- *
- * The turn's kind comes from `pi.live.run.first`, the run's first placed entry, and never from a scan for the newest
- * input: #199 made a compaction the newest "input" and lost a turn's origin, and the pointer cannot do that. The
- * working-note cases below are that failure's deterministic repro.
- */
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -43,10 +31,6 @@ after(async () => {
 	for (const directory of directories) await rm(directory, { recursive: true, force: true });
 });
 
-/**
- * A runTurn home carries one routine, because a boot ships none and a fired turn needs a hook to answer. The interval
- * is far past every test's lifetime, so only the test's own fire becomes a turn.
- */
 async function seedRoutine(directory: string): Promise<void> {
 	await mkdir(join(directory, "house", "agent"), { recursive: true, mode: 0o700 });
 	await writeFile(
@@ -78,12 +62,10 @@ function fauxAccess(): { access: ResolvedModel; faux: ReturnType<typeof fauxProv
 	return { access: { models, ref: { provider: "faux", modelId: "faux-1" }, faux: true }, faux };
 }
 
-/** The answer the model wrote: the text is the message, so this turn speaks. */
 function said(text: string): FauxResponseStep {
 	return fauxAssistantMessage(fauxText(text));
 }
 
-/** A final answer with no text at all: the turn ends and nothing was written. */
 function silent(): FauxResponseStep {
 	return fauxAssistantMessage([{ type: "thinking", thinking: "nothing worth writing" }], { stopReason: "stop" });
 }
@@ -92,7 +74,6 @@ function call(name: string, arguments_: JsonObject, id: string): FauxResponseSte
 	return fauxAssistantMessage([fauxToolCall(name, arguments_, { id })], { stopReason: "toolUse" });
 }
 
-/** A scripted provider that also records what each request was asked with. */
 function recorder(steps: readonly FauxResponseStep[]): {
 	steps: FauxResponseStep[];
 	requests: Message[][];
@@ -114,7 +95,6 @@ function recorder(steps: readonly FauxResponseStep[]): {
 	return { steps: queue, requests };
 }
 
-/** A turn, scripted: how it started, and everything it left behind. */
 async function runTurn(
 	directory: string,
 	script: ReturnType<typeof recorder>,
@@ -148,7 +128,6 @@ async function runTurn(
 	}
 }
 
-/** A turn nothing outside mason started: the transcript is its reader, and it owes one message. */
 function runScripted(
 	directory: string,
 	script: ReturnType<typeof recorder>,
@@ -161,10 +140,8 @@ function runScripted(
 	});
 }
 
-/** One fire, one turn: the id is the sender's, so it has to be one only this test uses. */
 let fires = 0;
 
-/** A turn an event hook started, through a fired hook the home's routine file names. */
 function runFired(
 	directory: string,
 	script: ReturnType<typeof recorder>,
@@ -177,23 +154,16 @@ function runFired(
 	});
 }
 
-/** Whether the gate ever nudged the model: a reminder is a user input the gate added, in the one shape it has. */
 function reminded(requests: readonly (readonly Message[])[]): boolean {
 	return requests.some((messages) =>
 		messages.some((message) => typeof message.content === "string" && isDeliveryReminder(message.content)),
 	);
 }
 
-/** The delivered rows of a transcript, as text. */
 function messages(transcript: ReturnType<typeof projectTranscript>): string[] {
 	return transcript.flatMap((item) => (item.kind === "delivered" ? [item.text] : []));
 }
 
-/**
- * A turn that writes one of mason's own working notes before it answers: a compaction's summary, or the prompt a turn
- * was planned with. Both carry a `user`-role message, which is what made the newest-input read take one for the person's
- * own words (#199). A tool writes it because a test cannot reach into a running turn any other way.
- */
 function workingNote(kind: "pi.compaction" | "pi.system", text: string): Extension {
 	const tool = defineTool({
 		name: "writeWorkingNote",
@@ -211,10 +181,6 @@ function workingNote(kind: "pi.compaction" | "pi.system", text: string): Extensi
 	return defineExtension({ name: "working-note", tools: [tool] });
 }
 
-/**
- * The two tools a long turn needs here: a probe, because a round of work is what the counter counts, and a write, so the
- * extraction leaves the file a test can read back.
- */
 function keeper(kept: string[]): Extension {
 	const keep = defineTool({
 		name: "keep",
@@ -234,17 +200,14 @@ function keeper(kept: string[]): Extension {
 	return defineExtension({ name: "keeper", tools: [keep, check] });
 }
 
-/** One round of work that changes nothing: the count is the point, not the output. */
 function probed(id: string, what: string): FauxResponseStep {
 	return call("check", { what }, id);
 }
 
-/** The one round that keeps something, in the file the ask names. */
 function worked(id: string, fact: string): FauxResponseStep {
 	return call("keep", { path: "agent/log/2026-11-05.md", line: fact }, id);
 }
 
-/** The requests the gate's ask started: it is the newest message of the request it opens, and of no other. */
 function askRequests(requests: readonly (readonly Message[])[]): (readonly Message[])[] {
 	return requests.filter((messages) => {
 		const newest = messages.at(-1) as { content?: unknown } | undefined;
@@ -316,7 +279,6 @@ test("a hook turn that says nothing is silent with no reminder and no notice", a
 	assert.equal(settled.status, "done");
 	assert.equal(requests.length, 1, "a hook turn may end without a message: nothing asks it for one");
 	assert.equal(reminded(requests), false, "no reminder");
-	// The event row is the fire's own; the turn wrote nothing, and that is allowed.
 	assert.deepEqual(
 		transcript.map((item) => item.kind),
 		[],
@@ -336,13 +298,6 @@ test("a hook turn that writes a message is not reminded either", async () => {
 	assert.deepEqual(messages(transcript), ["Привет!"]);
 });
 
-/**
- * The second gate on the same plumbing: a turn of real work ends by keeping what it learned.
- *
- * `beforeRequest` counts the turn's tool rounds and memoizes it, `onYield` continues the run once with the ask. The ask
- * is a `pi.user` entry like the reminder, so the projection drops it and the reader sees only the message that says what
- * was kept.
- */
 test("a turn of ten tool rounds is asked once what to keep, and the reader never sees the question", async () => {
 	const directory = await temporary();
 	const kept: string[] = [];
@@ -358,7 +313,6 @@ test("a turn of ten tool rounds is asked once what to keep, and the reader never
 		probed("r9", "the fix"),
 		probed("r10", "the release notes one last time"),
 		said("The migration is done, and the release notes are updated."),
-		// The continuation's own turn: the extraction, then the message that reports it.
 		worked("r11", "Denis moves standups to nine."),
 		said("Kept one line about the standup."),
 	]);
@@ -410,11 +364,6 @@ test("a turn that fits in three tool rounds is never asked what to keep", async 
 	assert.deepEqual(messages(transcript), ["Three items in notes.md."]);
 });
 
-/**
- * The count and the reminder share a context: a long turn that ends in silence is reminded first, and the rounds that
- * earned the ask are still in the turn when it answers. A count that restarted at the continuation would ask nobody,
- * which is exactly the turn that needed it.
- */
 test("a long turn that ends silently is reminded, answers, and is then asked what to keep", async () => {
 	const directory = await temporary();
 	const kept: string[] = [];
@@ -430,7 +379,6 @@ test("a long turn that ends silently is reminded, answers, and is then asked wha
 		probed("r9", "the plan again"),
 		probed("r10", "the copy"),
 		silent(),
-		// Reminded, the model says what it meant to say; then the ask arrives, and the extraction ends with a message.
 		said("The migration is done, and the release notes are updated."),
 		said("Nothing worth keeping."),
 	]);
@@ -509,7 +457,6 @@ test("a fire that named its conversation keeps its origin through the reflection
 			{ connector: "telegram", ref: "team", messageId: "m9" },
 			"the fire's origin stays on the entry the run started from",
 		);
-		// Every message of the turn names the fire as its run: the ask is a continuation, not a new destination.
 		for (const row of transcript.filter((item) => item.kind === "delivered")) {
 			assert.equal((row as { runId?: string }).runId, String(hook?.id), "the message belongs to the fire's run");
 		}
@@ -518,13 +465,6 @@ test("a fire that named its conversation keeps its origin through the reflection
 	}
 });
 
-/**
- * #199's deterministic repro: a working note written after the person's words and before the answer.
- *
- * Both of these entries carry a `user`-role message, so a read that finds the newest input by its text takes the summary
- * for the person. The turn's input is `pi.live.run.first` instead — the fire's own entry — and every message the turn
- * writes names that entry as its run. Neither a compaction nor a system note can become it.
- */
 for (const note of [
 	{ kind: "pi.compaction", text: "Summary so far: the person asked about the migration." },
 	{ kind: "pi.system", text: "The plan this turn was given: migrate the notes." },
@@ -614,14 +554,11 @@ test("a second long turn is asked once more than its first", async () => {
 	const script = recorder([
 		...probes("a"),
 		said("The first migration is done."),
-		// The first ask's continuation, then a new turn the person starts once it landed, with its own ten carried calls.
 		said("Kept one line about the first run."),
 		...probes("b"),
 		said("The second migration is done."),
-		// The second ask's continuation ends the conversation on a settle.
 		said("Kept one line about the second run."),
 	]);
-	// Two separate submits: a single submit's continuation is the same turn and gets no second ask.
 	const { settled, requests } = await runTurn(directory, script, [keeper(kept)], async (runtime) => {
 		const conversation = await runtime.conversation();
 		await (await conversation.submit({ type: "input", content: "Migrate the first run." }, BACKGROUND_CONTEXT)).wait(
@@ -637,8 +574,6 @@ test("a second long turn is asked once more than its first", async () => {
 });
 
 test("a connector entry is the sender's words, even when they quote a gate's opening line", () => {
-	// A person can type anything on the wire, including the first words a gate prints. The routing read treats what a
-	// connector carried as the sender's own words always, and the gates' tell applies to entries mason itself wrote.
 	const askViaConnector = {
 		id: 1,
 		kind: "app.connector" as const,

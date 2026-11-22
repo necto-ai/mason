@@ -1,10 +1,3 @@
-/**
- * `scripts/new.ts` — one bot under a root, and the doctor line that says what it produced.
- *
- * The home it creates is today's home, unchanged: two halves, the soul from the product, the shipped skills seeded, and
- * `agent/.git` for the memory. What is new is only where it sits, the console grant it writes, and what it refuses — a
- * name that is taken, a root with no common store, a name that is not a bot's.
- */
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -20,8 +13,6 @@ import { readRoot } from "../src/server/root.ts";
 const directories = new Set<string>();
 const previousPort = process.env.PORT;
 before(() => {
-	// A port nothing can be listening on: the doctor's server check is "not running is fine", and this keeps the test from
-	// depending on whatever the machine happens to serve on 8787.
 	process.env.PORT = "1";
 });
 after(async () => {

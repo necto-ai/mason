@@ -1,9 +1,3 @@
-/**
- * The line ratchet: what counts as a line of code, and what the audit refuses.
- *
- * The point of the ceiling is that it notices growth nobody argued for, so the tests here are about the edges — a
- * comment, a blank line, a test file, a directory that is gone — because those are the places a counter quietly lies.
- */
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -40,8 +34,6 @@ test("countCode() counts code, and nothing a reader skips", () => {
 		"\tconst b = 2; /* trailing comments are still code */",
 		"#!/usr/bin/env node",
 	].join("\n");
-	// The import, the two consts. The block comment's middle lines start with `*`, the first with `/*`, the shebang with
-	// `#!`, and the rest are blank.
 	assert.equal(countCode(text), 3);
 });
 

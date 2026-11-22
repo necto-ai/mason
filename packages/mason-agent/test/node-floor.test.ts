@@ -1,12 +1,3 @@
-/**
- * `bin/node-floor.ts` — the version mason refuses to start under, and the one import the entry point may have.
- *
- * The floor is mason's supported runtime — TypeScript from source, state in `node:sqlite` — and it can only be enforced
- * by code that runs on the version being refused. That is why the interesting test here is the second one: the check is
- * worthless if the module holding it grows an import, because ESM evaluates an import before the line that would have
- * printed the refusal. A future edit that adds `import { … } from "../src/…"` to `bin/mason.ts` would pass a review and
- * silently turn every old-Node run back into `ERR_UNKNOWN_BUILTIN_MODULE`, so the shape is pinned, not described.
- */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -42,8 +33,6 @@ test("a version at the floor or above runs, and one below it is refused by name"
 });
 
 test("a version this check cannot read is refused rather than allowed", () => {
-	// The floor exists because a version below it fails somewhere unhelpful; an unreadable string is not a promise
-	// that the version is recent, and guessing "probably fine" is the failure this check was written to end.
 	const problem = tooOld("not-a-version");
 	assert.notEqual(problem, null);
 	assert.match(problem as string, /cannot read this Node's version/);

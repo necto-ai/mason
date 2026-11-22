@@ -1,23 +1,11 @@
-/**
- * A behaviour scenario: what the agent is told, what its tools answer, and what must be true afterwards.
- *
- * Files, not prose. A scenario is small enough to read, and its assertions are the same ones a person would apply to a
- * transcript — did it act, did it report once, did it check before claiming, did it remember.
- */
 export interface Scenario {
 	readonly id: string;
 	readonly about: string;
-	/**
-	 * Files to plant in the home before the run, by path relative to the half they belong in (`soul.md` is the server's,
-	 * `profile.md` and `skills/x/SKILL.md` are the agent's; `lib/runner.ts` resolves each through `housePaths`).
-	 */
 	readonly home?: Record<string, string>;
-	/** What each stub tool answers. `bash` matches a substring of the command; `read` matches the path exactly. */
 	readonly stubs?: {
 		readonly bash?: readonly { readonly match: string; readonly result: string }[];
 		readonly read?: readonly { readonly path: string; readonly result: string }[];
 	};
-	/** The turns, oldest first. A turn with `hook` is submitted exactly as a fired hook submits it. */
 	readonly turns: readonly {
 		readonly text?: string;
 		readonly hook?: { readonly name: string; readonly description?: string; readonly payload?: string };
@@ -26,45 +14,32 @@ export interface Scenario {
 }
 
 export interface Expected {
-	/** How often each tool was called. Absent tool: unconstrained; listed tool: bounds are honoured. */
 	readonly calls?: Record<string, { readonly min?: number; readonly max?: number }>;
-	/** These tools must never be called. */
 	readonly absentTools?: readonly string[];
-	/** `then` must not be called before `tool`: "it checked before it claimed". */
 	readonly before?: readonly { readonly tool: string; readonly then: string }[];
-	/** Substrings the delivered messages must contain, case-insensitive. */
 	readonly text?: readonly string[];
-	/** Substrings the delivered messages must not contain, case-insensitive — filler, permission-asking. */
 	readonly absentText?: readonly string[];
-	/** Regexes some file the agent wrote must match: "it wrote the fact down, somewhere it lives". */
 	readonly written?: readonly string[];
-	/** Bounds how often the delivery gate had to rescue a turn, so a model that stops delivering is visible. */
 	readonly reminders?: { readonly min?: number; readonly max?: number };
-	/** The run must not send more prompt tokens than this. */
 	readonly maxInputTokens?: number;
-	/** Tool calls spent on work: every call the model made, because no call is the message any more. */
 	readonly maxTools?: number;
 }
 
-/** One thing that was checked, and whether it held. */
 export interface Check {
 	readonly name: string;
 	readonly pass: boolean;
 	readonly detail: string;
 }
 
-/** Everything a run leaves behind: what the reader saw, what the agent did, what it cost. */
 export interface Trace {
 	readonly scenario: string;
 	readonly model: string;
 	readonly delivered: string[];
 	readonly notices: string[];
-	/** How many times the delivery gate had to remind the model that nothing had been sent this turn. */
 	readonly reminders: number;
 	readonly toolCalls: { name: string; args: unknown }[];
 	readonly inputTokens: number;
 	readonly outputTokens: number;
-	/** One entry per submitted turn: how many messages the reader got, and how the turn settled. */
 	readonly turns: { readonly delivered: number; readonly status: string }[];
 	readonly finished: boolean;
 	readonly error?: string;

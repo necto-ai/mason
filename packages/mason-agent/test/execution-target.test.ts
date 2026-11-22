@@ -1,10 +1,3 @@
-/**
- * The execution-target seam: which machine a conversation resolves its environment on.
- *
- * `app.target` is a durable conversation document `{ kind: "local", cwd }`; the machine it names is the bot's, one
- * connection shared by the whole process, released at shutdown. Issue #20: a restart must not forget which machine
- * held the workspace, and a fork carries no target of its own.
- */
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -27,7 +20,6 @@ async function tempDir(prefix: string): Promise<string> {
 	return directory;
 }
 
-/** A faux provider whose scripted responses the test controls; nothing is sent to a provider. */
 function fauxAccess(): { access: ResolvedModel; faux: ReturnType<typeof fauxProvider> } {
 	const faux = fauxProvider();
 	const models = createModels();
@@ -35,14 +27,11 @@ function fauxAccess(): { access: ResolvedModel; faux: ReturnType<typeof fauxProv
 	return { access: { models, ref: { provider: "faux", modelId: "faux-1" }, faux: true }, faux };
 }
 
-/** The resolved environment manager: the seam's full shape, namely what the harness only carries as its base type. */
 function targetsOf(runtime: AgentRuntime): ExecutionTargetManager {
 	return runtime.env as ExecutionTargetManager;
 }
 
 function openFor(directory: string, access: ResolvedModel): Promise<AgentRuntime> {
-	// SQLite: the transcript outlives the process that wrote it, which is what `app.target` is about. Two boots on
-	// the same `dataDir` reopen the same storage file.
 	return openAgentRuntime(BACKGROUND_CONTEXT, {
 		dataDir: join(directory, "data"),
 		workspaceDir: directory,
@@ -64,8 +53,6 @@ describe("execution targets", () => {
 			alias: process.env.PI_ENV_SSH_ALIAS,
 			device: process.env.PI_ENV_DEVICE_HOME,
 		};
-		// A device that is configured but never dialled: `ensure()` builds the connection lazily, and this test is about
-		// the path the target names, not a round trip.
 		process.env.PI_ENV_SSH_HOST = "device.invalid";
 		process.env.PI_ENV_SSH_KNOWN_HOSTS = knownHosts;
 		process.env.PI_ENV_SSH_ALIAS = "device.invalid";
@@ -82,8 +69,6 @@ describe("execution targets", () => {
 			const conversation = await runtime.conversation();
 			const target = await targetsOf(runtime).ensure(String(conversation.id));
 			assert.equal(target.state.cwd, deviceHome);
-			// The outbox is resolved through the same environment, so the workspace it joins is the device's: a host path
-			// on a device names a directory that machine does not have, and every deliverable would be refused.
 			assert.equal(runtime.workspaceDir, join(deviceHome, "workspace"));
 		} finally {
 			await runtime?.close();
@@ -108,8 +93,6 @@ describe("execution targets", () => {
 		const first = await openFor(directory, access);
 		try {
 			const conversation = await first.conversation();
-			// A cwd of its own, so "kept" cannot be confused with "defaulted again": the workspace default is
-			// `directory`, and only the document carries `custom` across the restart.
 			await conversation.configure({ cwd: custom }, BACKGROUND_CONTEXT);
 			const id = String(conversation.id);
 			const target = await targetsOf(first).ensure(id, custom);
@@ -117,14 +100,12 @@ describe("execution targets", () => {
 				{ kind: target.state.kind, cwd: target.state.cwd },
 				{ kind: "local" as ExecutionTargetState["kind"], cwd: custom },
 			);
-			// Idempotent per conversation: the second ensure returns what the first one built.
 			const again = await targetsOf(first).ensure(id, custom);
 			assert.equal(again, target);
 		} finally {
 			await first.close();
 		}
 
-		// The restart: a second runtime over the same storage, resolving with no cwd of its own.
 		const second = await openFor(directory, access);
 		try {
 			const conversation = await second.conversation();
@@ -139,19 +120,14 @@ describe("execution targets", () => {
 	it("gives a fork no target of its own: the machine is the bot's, one connection", async () => {
 		const directory = await tempDir("target-fork-");
 		const { access, faux } = fauxAccess();
-		faux.setResponses([
-			// The answer's text is the message, so the turn settles `done` instead of ending undelivered.
-			fauxAssistantMessage(fauxText("Nothing to report.")),
-		]);
+		faux.setResponses([fauxAssistantMessage(fauxText("Nothing to report."))]);
 
 		const runtime = await openFor(directory, access);
 		try {
 			const root = await runtime.conversation();
-			// A cwd of its own, so a fork that failed to copy the document cannot pass a defaulted read.
 			const custom = join(directory, "custom");
 			await mkdir(custom, { recursive: true });
 			await root.configure({ cwd: custom }, BACKGROUND_CONTEXT);
-			// One entry, so the fork has a context-of-record to fork at.
 			const settled = await (await root.submit({ type: "input", content: "Report." }, BACKGROUND_CONTEXT)).wait(
 				BACKGROUND_CONTEXT,
 			);
@@ -162,7 +138,6 @@ describe("execution targets", () => {
 			const rootTarget = await targetsOf(runtime).ensure(String(root.id));
 			const fork = await root.fork(at, { ownership: { kind: "ownerless" } }, BACKGROUND_CONTEXT);
 			const forkTarget = await targetsOf(runtime).ensure(String(fork.id));
-			// The fork resolved from the copied document and attached to the same machine, not a machine of its own.
 			assert.deepEqual(forkTarget.state, rootTarget.state);
 			assert.equal(forkTarget.connection, rootTarget.connection);
 		} finally {

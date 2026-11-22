@@ -1,10 +1,3 @@
-/**
- * `src/server/root.ts` — the directory above the home.
- *
- * A bot is today's home, unchanged, one directory under the root; `common/` sits beside it and is never a bot. These
- * tests pin the two things every command depends on: what counts as a bot, and which bot a command is about — the root's
- * one, or a refusal that names the two it found. Every root here is a temporary directory.
- */
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
@@ -34,7 +27,6 @@ async function tempRoot(): Promise<string> {
 	return directory;
 }
 
-/** One bot: its name and whichever halves the test wants it to have. */
 async function bot(
 	root: string,
 	name: string,
@@ -98,8 +90,6 @@ describe("the bot a command is about", () => {
 	});
 
 	test("a root holding two bots is a refusal naming both, and the way to one of them", async () => {
-		// One environment is one bot (#201): there is no `-b` to pick with any more, so the refusal is about the shape of
-		// the root rather than about an answer the command is missing.
 		const root = await tempRoot();
 		await bot(root, "alice");
 		await bot(root, "bob");
@@ -112,8 +102,6 @@ describe("the bot a command is about", () => {
 	test("a root with no bot says the command that creates one", async () => {
 		const root = await tempRoot();
 		assert.throws(() => resolveBot(readRoot(root)), /has no bot yet/);
-		// The commands are `command-line.ts`'s, not `mason init`/`mason new`: the image has no `mason` on `PATH` and no
-		// `dist`, so the sentence names the two scripts that run where it is read.
 		assert.throws(
 			() => resolveBot(readRoot(root)),
 			(error: unknown) => error instanceof Error && error.message.includes(INIT) && error.message.includes(NEW),
@@ -121,12 +109,6 @@ describe("the bot a command is about", () => {
 	});
 });
 
-/**
- * A root opened as one home. `common/` is the whole signal and the bot beside it is only named: `mason init` writes the
- * store before `mason new` makes the bot, so keyed on the bot the guard let the shape a first run actually produces
- * through, and `ensureHouse` wrote `agent/` and `service/` into the root. `scripts/boot-test.sh` pins the same two
- * shapes in the image, and digests the bot-less tree before and after the refusal.
- */
 describe("a root addressed as one home", () => {
 	test("a root holding common/ and a bot is refused, naming the bot it holds", async () => {
 		const root = await tempRoot();

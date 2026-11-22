@@ -1,26 +1,3 @@
-/**
- * `/api/connector`: mason's Chord host, and the one socket a connector opens.
- *
- * The protocol is `packages/protocol` and its prose is `packages/protocol/PROTOCOL.md`; this file is mason's end of it.
- * Four things live here and they are deliberately one module, because they are one host's lifetime:
- *
- * 1. **The identity.** A connector is accepted as the Chord child host `connector:<name>`, stamped with the principal
- *    the credential names. Chord carries the link, the addressing and the validation; what is left here is the answer to
- *    "who is this" and the one method each side calls.
- * 2. **Inbound is one append.** `submission` and `event` arrive through one method and are claimed durably before they
- *    are answered. The claim is deduplicated on the sender's id forever — the durable log never forgets a request id, so
- *    a resend after a restart is the same act.
- * 3. **The session is state.** The connector reads its grants as a state member of `mason.peer`, so there is no hello to
- *    answer and no face to negotiate: what the operator granted is what it sees, and it cannot change under a live
- *    socket.
- * 4. **The conversation is the state, and the state is the answer.** The agent's message is a row of the `conversation`
- *    member the door publishes, and that is how it reaches a reader: there is no second method to call, nothing to
- *    deliver and nothing to acknowledge. The member is served only to a grant with a `user`: an event client reads no
- *    transcript, and its cell stays empty because nothing is published to it.
- *
- * What is *not* here: the owner's token. A connector credential opens this socket and the asset endpoints and
- * nothing else; the config is read per request, so a revoke lands on the next connection rather than the next restart.
- */
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import { createHost, type Host, type Link, webSocketLink } from "@earendil-works/chord";
@@ -66,13 +43,10 @@ import { createReadModel, EMPTY_CONVERSATION } from "./read-model.ts";
 import type { AgentRuntime } from "./runtime.ts";
 import { deriveRunStatus, isBusy, queuedSubmissions } from "./status.ts";
 
-/** The path a connector opens. Beside the Chord socket rather than inside it: one door, one contract. */
 export const CONNECTOR_PATH = "/api/connector";
 
-/** What `compact` may be told, in characters: a line of instruction, not a document. */
 export const COMMAND_INSTRUCTION_MAX = 200;
 
-/** Who is on the other end of a link. The credential wrote it and nothing on the wire may change it. */
 export interface ConnectorPrincipal {
 	readonly connector: string;
 }
@@ -80,19 +54,13 @@ export interface ConnectorPrincipal {
 export interface ConnectorDoorOptions {
 	readonly runtime: AgentRuntime;
 	readonly attachments: AttachmentStore;
-	/** One limiter for the process, shared with the attachment routes: a class budget is the connector's, not a socket's. */
 	readonly limiter: FireLimiter;
 	readonly log?: (line: string) => void;
 	readonly now?: () => number;
-	/** How the door picks the config a socket is authenticated against. A test reads the home it booted. */
 	readonly home?: string;
 }
 
 export interface ConnectorDoor {
-	/**
-	 * Authenticate an upgrade and hand the socket its link. The caller has already routed the request to this path; a
-	 * refusal closes the socket with a reason and says why in the log.
-	 */
 	attach(socket: WebSocket, request: IncomingMessage): Promise<void>;
 	close(): Promise<void>;
 }
@@ -109,21 +77,13 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 		onError: (error) => log(`[connector] ${error instanceof Error ? error.message : String(error)}`),
 	});
 
-	// The read model the `conversation` member publishes. One per door, because there is one conversation: the watch
-	// below advances it and hands the same value to every peer object's cell.
 	const model = createReadModel();
-	/** The manifest each connector handed over at its last handshake, echoed in its session. */
 	const metadata = new Map<string, IntegrationManifest>();
 	let state = model.value;
-	/** What each live peer object listens with: a set, so a connector that goes removes only its own subscription. */
 	const watchers = new Set<(value: ConversationState) => void>();
 
-	// The peer object is per connector: its principal is the credential's, so the state it exposes is that connector's
-	// grant and nobody else's.
 	host.serve(MasonPeer, (input, principal, self) => {
 		const name = principal.connector;
-		// The manifest a connector sent in its handshake: one contract for docs, tools and events. A connector that sends
-		// none is deleted from the table rather than left with a stale one, and its events are seeded disabled.
 		const declared = (input as { readonly metadata?: unknown }).metadata;
 		if (declared === undefined) {
 			metadata.delete(name);
@@ -134,16 +94,11 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 				options.runtime.hooks.seed(name, manifest.events);
 			}
 		}
-		// One contract, two surfaces, and the grant is what decides which. A `user` grant is a reader: it is served the
-		// conversation state and its feed. An entry without one is an event client, and its cell stays the empty value:
-		// there is nothing a transcript could tell it that it is allowed to read, so nothing is published to it.
 		const reads = grantOf(name).user !== undefined;
 		const conversation = self.state("conversation", ConversationStateSchema, {
 			init: () => (reads ? state : EMPTY_CONVERSATION),
 		});
 		if (reads) {
-			// The door's one watch, opened and closed with this object: a socket that goes takes its subscription with it,
-			// and the door keeps one watch for the process rather than one per socket.
 			const feed = self.resource("conversation-feed", {
 				version: 1,
 				open: () => {
@@ -155,8 +110,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 					return {
 						subscribe(listener: (value: ConversationState) => void) {
 							listeners.add(listener);
-							// The value the cell was initialised with: a publish that landed between the init and this listener is not
-							// lost, and the handler ignores a revision the cell already holds.
 							listener(state);
 							return () => listeners.delete(listener);
 						},
@@ -168,8 +121,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 				},
 				close: (opened) => opened.stop(),
 			});
-			// The rows are shared with the previous revision on purpose: a diff that sees the same containers appends to the
-			// tail instead of replacing the transcript.
 			self.on("publish", feed, (value, ctx) => {
 				if (value.revision <= conversation.value.revision) return;
 				conversation.replace(ctx, value, { diff: true });
@@ -187,8 +138,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 	const door: ConnectorDoor = {
 		attach,
 		close: async () => {
-			// The watch first, and stopped rather than merely unsubscribed: a publish that lands mid-close would write to a
-			// view this door no longer serves, and a watch left running is a listener on a log nobody reads back.
 			unsubscribe();
 			await watch.dispose();
 			for (const link of links.values()) link.close("mason is shutting down");
@@ -199,8 +148,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 
 	let latest: ConversationView | undefined;
 
-	// One watch for the whole door: every peer's cell is fed from it. A per-socket watch would be one listener per
-	// connector on a log that already fans out to every reader.
 	const watch = await options.runtime.viewState(BACKGROUND_CONTEXT);
 	const unsubscribe = watch.subscribe((view) => {
 		latest = view;
@@ -214,8 +161,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 	return door;
 
 	async function attach(socket: WebSocket, request: IncomingMessage): Promise<void> {
-		// The link is made before the first await. Chord queues what arrives until `accept`, and the credential is read
-		// from disk: a hello that arrived meanwhile must not be dropped by a socket with no listener on it.
 		const link = webSocketLink(socket as never);
 		let auth: Awaited<ReturnType<typeof authenticateConnector>>;
 		try {
@@ -233,7 +178,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 		const name = auth.identity.name;
 		const previous = links.get(name);
 		if (previous !== undefined) {
-			// Two sockets under one host name shadow each other silently in Chord, so the old one goes first.
 			log(`[connector] ${name}: a second socket supersedes the first`);
 			links.delete(name);
 			previous.close("superseded by a second socket for this connector");
@@ -246,16 +190,10 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 		log(`[connector] ${name} connected`);
 	}
 
-	/* ---------------------------------------------------------------------------------------------------------------- */
-	/* The peer object                                                                                                  */
-	/* ---------------------------------------------------------------------------------------------------------------- */
-
 	function sessionOf(name: string): Session {
 		const grant = grantOf(name);
 		return {
 			protocol: PROTOCOL_MAJOR,
-			// A command is a reader's act: stopping a turn, compacting a conversation, reading a status. An entry with no
-			// `user` grant is served none, so an event client cannot spend a word the contract would refuse anyway.
 			commands: grant.user === undefined ? [] : [...(grant.commands ?? [])],
 			kinds: [...(grant.events?.kinds ?? [])].sort(),
 			limits: {
@@ -263,7 +201,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 				firesPerMinute: CONNECTOR_FIRE_LIMIT,
 				controlsPerMinute: CONNECTOR_CONTROL_LIMIT,
 				attachmentsPerMinute: ATTACHMENT_LIMIT,
-				// The store's own bounds, not the constants: a deployment that narrowed them is what a connector obeys.
 				attachmentBytes: options.attachments.maxBytes,
 				attachmentTtlMs: options.attachments.ttlMs,
 			},
@@ -299,8 +236,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 		grant: ConnectorGrant,
 		args: Extract<AppendArgs, { type: "submission" }>,
 	): Promise<AppendResult> {
-		// Everything in the grant is a ceiling, and the user face is the first of them: an entry granted only events is a
-		// connector that may raise alerts, and its words are not a person's.
 		if (grant.user === undefined) {
 			throw masonError(
 				ERROR_CODE.faceNotGranted,
@@ -315,8 +250,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 		spend(name, "submission", CONNECTOR_SUBMISSION_LIMIT);
 		const origin = originOf(name, args.origin);
 		const input = await userInput(name, args.content);
-		// The entry's data is where the row finds its files: a content id and its display fields, never the path the model
-		// was given. Origin and assets are independent, so a message may carry either, or both.
 		const data = {
 			...(origin === undefined ? {} : { origin: originData(origin) }),
 			...(input.assets.length === 0 ? {} : { assets: input.assets }),
@@ -335,12 +268,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 		return { outcome: "accepted", ...entryOf(record.entry) };
 	}
 
-	/**
-	 * `submit`, with the refusal a connector's own `mode: "reject"` asks for mapped to the code it is.
-	 *
-	 * `whenBusy: "reject"` is the connector saying it would rather be told than queued, so the answer is a refusal it can
-	 * act on — not a Chord `unavailable`, which a connector reads as "try again later".
-	 */
 	async function submitInput(draft: SubmissionDraft) {
 		try {
 			return await conversation.submit(draft, BACKGROUND_CONTEXT);
@@ -356,19 +283,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 		}
 	}
 
-	/**
-	 * The words as the model reads them, plus the files they sent.
-	 *
-	 * Text and markdown blocks become the message, unprefixed: the connector's credential already says who is speaking,
-	 * and one person's bot has nobody to tell apart. A file block becomes identity only — the sidecar's id, name, type
-	 * and size — and a line naming the path the turn will put it at. Nothing is written here: the bytes cross through the
-	 * target's execution environment at turn start (`inbox.ts`), because a submission must not touch a machine this
-	 * process cannot reach, and an image is inlined only for a request, never committed as base64.
-	 *
-	 * The name is the sidecar's, so the line, the entry and the materialiser all spell one path. The row shows it through
-	 * `displayName` in the projection: a name that is a directory name is still a file on disk and a content id in the
-	 * transcript.
-	 */
 	async function userInput(
 		name: string,
 		blocks: readonly ContentBlock[],
@@ -387,8 +301,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 			}
 			const stored = found.meta;
 			const type = block.mimeType ?? stored.mimeType;
-			// The sidecar's name is what the file was stored as; a block name only fills the gap when the upload named none.
-			// One name goes to the row, the model's line and the write, so the path the line names is the path that lands.
 			const fileName = stored.name ?? block.name ?? stored.contentId;
 			assets.push({ id: stored.contentId, name: fileName, mimeType: type, size: stored.size });
 			text.push(`[file: ${attachmentPath("~", stored.contentId, fileName)} — ${type}, ${stored.size} bytes]`);
@@ -396,13 +308,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 		return { content: text.join("\n"), assets };
 	}
 
-	/**
-	 * One event: written to the log always, and it wakes the bot only when the routine its kind names is live.
-	 *
-	 * Three lines decide everything. A kind the grant does not name is refused. A granted kind with no enabled entry in
-	 * `agent/events.json` is written to the log and wakes nothing — the log is the default sink, so no wildcard grant and
-	 * no separate append type is needed. A kind with an enabled entry starts a turn.
-	 */
 	async function event(
 		name: string,
 		grant: ConnectorGrant,
@@ -411,8 +316,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 		if (grant.events?.kinds.includes(args.kind) !== true) {
 			throw masonError(ERROR_CODE.kindNotPermitted, `"${args.kind}" is not a kind this entry's grant names`);
 		}
-		// The log is the record, so it is the dedupe: an event whose entry is absent or disabled never becomes a turn, and a
-		// resend after a lost acknowledgement would otherwise be written twice.
 		if (options.runtime.events.seen(name, args.appendId)) return { outcome: "duplicate" };
 		const requestId = connectorRequestId(name, "fire", args.appendId);
 		spend(name, "fire", CONNECTOR_FIRE_LIMIT);
@@ -450,8 +353,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 	async function control(name: string, args: ControlArgs): Promise<ControlResult> {
 		const grant = grantOf(name);
 		if (grant.user === undefined) {
-			// The refusal names the grant that is missing, not the command: a control is a reader's act, and this entry
-			// has no reader to act for. The contract stays one `mason.peer`; the grant decides the surface.
 			throw masonError(
 				ERROR_CODE.faceNotGranted,
 				`"${name}" holds no user grant: controls belong to the client that reads the conversation, and this entry does not`,
@@ -459,7 +360,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 		}
 		const op = args.op;
 		if (!(CONTROL_OPS as readonly string[]).includes(op)) {
-			// An undeclared op spends nothing: a typo must not cost the minute a real `/stop` needs.
 			throw masonError(
 				ERROR_CODE.invalidRequest,
 				`${op} is not a control mason knows: the whole set is ${CONTROL_OPS.join(", ")}`,
@@ -468,8 +368,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 		if (!(grant.commands ?? []).includes(op as ControlOp)) {
 			throw masonError(ERROR_CODE.invalidRequest, `this entry declares no "${op}" command`);
 		}
-		// `stop` has a budget of its own beside the controls, so a connector that spent its minute on compactions can still
-		// stop the turn those compactions were about.
 		spend(name, op === "stop" ? "stop" : "control", CONNECTOR_CONTROL_LIMIT);
 		const instructions = typeof args.instructions === "string" ? args.instructions : undefined;
 		if (op !== "compact" && instructions !== undefined && instructions.trim() !== "") {
@@ -501,8 +399,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 							busy: isBusy(latest),
 							queued: queuedSubmissions(latest),
 							commands: [...CONTROL_OPS],
-							// The roles are the boot's, not the view's: a client that shows which model answered is
-							// told the pair a person configured, resolved to the catalog, rather than one conversation's.
 							roles: options.runtime.roles,
 						},
 					}
@@ -510,7 +406,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 		};
 	}
 
-	/** Whether this request id is already a durable claim, and what the claim says. */
 	async function claim(requestId: string): Promise<{ readonly entry?: number } | undefined> {
 		return conversation.commit(async (tx) => {
 			const existing = await tx.submissionByRequest(conversation.id, requestId);
@@ -519,13 +414,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 		}, BACKGROUND_CONTEXT);
 	}
 
-	/**
-	 * Charge one act against its minute, or refuse with the wait in the words.
-	 *
-	 * Chord carries a code, a message and a reason across a link and nothing else, so a structured `retryAfterMs` would be
-	 * dropped on the way (`packages/client/WIRE.md`). The sentence is the field that arrives: it names the budget, and
-	 * how long the connector should wait before it tries again.
-	 */
 	function spend(name: string, kind: "submission" | "fire" | "control" | "stop", perMinute: number): void {
 		const wait = options.limiter.take(`connector:${kind}:${name}`, perMinute);
 		if (wait === undefined) return;
@@ -539,7 +427,6 @@ export async function createConnectorDoor(options: ConnectorDoorOptions): Promis
 
 type UserInput = string;
 
-/** The origin the transcript keeps: the connector, the address it minted, and the medium's own message id. */
 function originOf(
 	connector: string,
 	origin: { ref: string; messageId?: string; actor?: { id: string; name?: string } } | undefined,
@@ -553,12 +440,6 @@ function originOf(
 	};
 }
 
-/**
- * The origin as an entry's `data` holds it: plain JSON, field by field.
- *
- * A protocol interface has optional members, and an entry's `data` is JSON — `undefined` is not a value it can carry. The
- * explicit checks are what make the two shapes the same shape.
- */
 function originData(origin: Origin) {
 	return {
 		connector: origin.connector,
@@ -575,19 +456,16 @@ function originData(origin: Origin) {
 	};
 }
 
-/** The `entryId` half of an append's answer, when the claim or the placement has one. */
 function entryOf(entry: number | undefined): { entryId?: string } {
 	return entry === undefined ? {} : { entryId: String(entry) };
 }
 
-/** The text an event's `payload` becomes: its own string, or the JSON, with the summary above it when there is one. */
 function payloadText(payload: unknown, summary: string | undefined): string {
 	const body = typeof payload === "string" ? payload : payload === undefined ? "" : JSON.stringify(payload, null, 2);
 	const head = typeof summary === "string" && summary.trim() !== "" ? `${summary.trim()}\n` : "";
 	return head + body;
 }
 
-/** A request id namespaced by connector and act: the durable log holds it forever, so two senders cannot collide. */
 export function connectorRequestId(connector: string, act: "submission" | "fire" | "control", id: string): string {
 	return `connector:${connector}:${act}:${id}`;
 }

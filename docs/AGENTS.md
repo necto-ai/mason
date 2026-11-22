@@ -12,7 +12,6 @@ which is current. This page is the map of which tier a sentence belongs to, and 
 | `docs/adr/NNNN-*.md` | One decision: the context that forced it, what was decided, what it cost, and where it stands | A plan, a how-to, or a description of the code as it happens to be written |
 | `docs/research/` | Evidence: what other projects do, with sources and the date they were read | Guidance. A research note answers "what is out there", never "what we must do" |
 | [`GLOSSARY.md`](../GLOSSARY.md) | The vocabulary: what a word means here, and which word it replaces | A file list, or a summary of the architecture |
-| `packages/mason-agent/src/**` comments | The local contract: why this function is written this way, what a caller must not assume | A summary of another file, a decision record, or a changelog |
 | `test/**` | The pin: the assertion that fails when the mechanism is removed | A demonstration of the API, or a copy of the implementation in a different shape |
 | `docs/doc-budgets.json` | The word ceilings this page's rules are enforced with | A list of files that are not documents |
 

@@ -1,16 +1,3 @@
-/**
- * `mason new <name>` — one bot under the root: a home, the soul and skills every home starts with, the built-in console
- * connector, and a doctor line that says what those produced.
- *
- * The home is today's home, unchanged (`house.ts`), so nothing downstream of this command has to know a root exists: the
- * bot's `agent/` and `service/` are what `MASON_HOME` would have pointed at. What is new is only where it sits — one
- * directory under the root — and that the root has to be initialised first: a bot with no common store has no provider,
- * and a bot that boots into "no model configured" is a first run that failed after the files were written.
- *
- * The one connector it grants is the console, written by the same `ensureConsole` `mason chat` uses: it needs no token,
- * no image and no container, so a scripted first run ends in a bot somebody can talk to instead of a refusal asking for a
- * flag. Every other connector is a grant an operator writes by hand, which is what the cut in #201 left.
- */
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { CHAT, UP } from "../src/server/command-line.ts";
@@ -46,7 +33,6 @@ export function parseArgs(argv: readonly string[]): NewArgs {
 	return { ...(name === undefined ? {} : { name }), help: rest.includes("--help") || rest.includes("-h") };
 }
 
-/** The command. Returns an exit code rather than calling `process.exit`, so a test can run the flow in-process. */
 export async function runNew(
 	argv: readonly string[],
 	options: { readonly root?: string; readonly doctor?: boolean } = {},
@@ -65,8 +51,6 @@ export async function runNew(
 			throw new Error(`"${name}" is not a bot name: lowercase letters, digits and dashes, and not "${COMMON}"`);
 		const home = botHome(root.root, name);
 		if (existsSync(home)) throw new Error(`bot "${name}" already exists at ${home}: this root holds one bot`);
-		// One environment is one bot (#201): a second directory would be a root no command can name a home in, so the
-		// refusal is about the shape rather than about a name being taken.
 		const existing = root.bots[0];
 		if (existing !== undefined)
 			throw new Error(
@@ -82,8 +66,6 @@ export async function runNew(
 		await mkdir(home, { recursive: true, mode: 0o700 });
 		await ensureHouse(paths, DEFAULT_SOUL);
 		await ensureRepository(paths.agentDir);
-		// Granted and minted together: a grant with no credential is a door that closes every socket, and `mason doctor` is
-		// what says so. `mason chat` rotates this credential on every run, so this is the first one, not a fixed one.
 		await ensureConsole(paths);
 		await mintConnectorCredential(paths.home, CONSOLE, { replace: true });
 		console.log(`[new] created bot "${name}" at ${home}, and granted "${CONSOLE}"`);

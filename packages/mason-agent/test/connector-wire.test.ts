@@ -1,18 +1,3 @@
-/**
- * The connector wire, as the numbers a pull request reads instead of taking somebody's word for: the bytes one committed
- * reply row costs in the `conversation` state, and the milliseconds a client that connects after the reply takes to hold
- * it.
- *
- * Every case drives a real Chord client over a real socket against a real server, because the number has to be mason's
- * read model and not a model of it. The row is measured as it crosses: an agent message's id is its place in the
- * transcript (`message:<n>`), so the row is deterministic and no placeholder is needed.
- *
- * Bytes are deterministic, so they gate the run. The milliseconds are printed and never fail it: a spread that is the
- * machine's is the reviewer's to read, not the build's to enforce.
- *
- * The numbers leave as lines in the log and, when `$GITHUB_STEP_SUMMARY` names a file, as one section in it — which is
- * how they reach the pull request without a workflow edit.
- */
 import assert from "node:assert/strict";
 import { appendFile, readFile } from "node:fs/promises";
 import { after, describe, it } from "node:test";
@@ -28,32 +13,21 @@ import {
 	until,
 } from "./support/connector.ts";
 
-/** The answer every case measures: one fixed length, so a number that moves is the wire and not the words. */
 const FIXTURE = "Here is the answer. ".repeat(60).trim();
 
-/** The ceiling, committed: above it the run fails, below it the run passes and says the number can come down. */
 const BASELINE = "test/connector-wire-baseline.json";
 const BASELINE_FILE = new URL(BASELINE, new URL("../", import.meta.url));
 
-/** The job summary, when CI gives the run one. */
 const SUMMARY = process.env.GITHUB_STEP_SUMMARY;
 
-/** What this run measured. Each case records a row before it asserts on it, so a failing run still prints the numbers. */
 const measured: { rowBytes?: number; baseline?: number; resumeMs?: number } = {};
 
-/** The bytes one committed agent message costs on the wire, `runId` and all. */
 function rowBytes(row: Record<string, unknown>): number {
 	return Buffer.byteLength(JSON.stringify(row));
 }
 
 type Verdict = "ok" | "stale" | "regression";
 
-/**
- * The size gate: a ceiling on the bytes one row costs, and the line the run prints for it.
- *
- * Above the baseline the row grew, and the message carries both numbers so the regression is readable from the log alone.
- * Below it the gate passes and says `baseline-stale`, which is the cue to lower the number in the same change.
- */
 function verdict(bytes: number, baseline: number): { readonly verdict: Verdict; readonly message: string } {
 	if (bytes > baseline) {
 		return { verdict: "regression", message: `wire: the message row grew: ${bytes} bytes, baseline ${baseline}` };
@@ -62,7 +36,6 @@ function verdict(bytes: number, baseline: number): { readonly verdict: Verdict; 
 	return { verdict: "ok", message: `${bytes} bytes, baseline ${baseline}` };
 }
 
-/** The committed baseline, or a failure that names the file to write: a missing baseline is not a pass. */
 async function baselineOf(): Promise<number> {
 	let raw: string;
 	try {
@@ -75,14 +48,12 @@ async function baselineOf(): Promise<number> {
 	return value;
 }
 
-/** How many entries of one kind the transcript holds: the assistant entry is what the row projects from. */
 async function countOf(served: ServedConnector, kind: string): Promise<number> {
 	const entries = await served.server.runtime.conversation();
 	const page = await entries.entries({}, 1000, undefined, { signal: AbortSignal.timeout(5_000) } as never);
 	return (page.items as unknown as { kind: string }[]).filter((entry) => entry.kind === kind).length;
 }
 
-/** The state a client holds after every frame it has seen: a snapshot replaces, a diff is applied to what is held. */
 function heldState(frames: readonly StateEvent<ConversationState>[]): ConversationState | undefined {
 	let state: ConversationState | undefined;
 	for (const frame of frames) {
@@ -91,14 +62,12 @@ function heldState(frames: readonly StateEvent<ConversationState>[]): Conversati
 	return state;
 }
 
-/** The committed agent-message rows of a state, oldest first, exactly as the wire carried them. */
 function committedRows(
 	state: ConversationState | undefined,
 ): Array<{ id: string; text: string } & Record<string, unknown>> {
 	return (state?.transcript ?? []).flatMap((row) => (row.kind === "delivered" && row.streaming !== true ? [row] : []));
 }
 
-/** The fixture, submitted over the socket under test with the message id a person's client would mint. */
 async function submitFixture(peer: Awaited<ReturnType<typeof holdPeer>>, appendId = "wire-1"): Promise<void> {
 	const outcome = await peer.ref.append({
 		type: "submission",
@@ -134,7 +103,6 @@ describe("the connector wire", () => {
 	});
 
 	it("hands a client that connects after the reply the same row, in a measured number of milliseconds", async () => {
-		// Paced, so the reply is committed after the submitting socket is gone: that is the wait this number is about.
 		const served = await serveConnector({ steps: replyTurns([FIXTURE]), tokensPerSecond: 400 });
 		try {
 			const first = await connectConnector(served);
@@ -167,8 +135,6 @@ describe("the connector wire", () => {
 	});
 
 	it("fails on a bigger row, with both numbers in the message", async () => {
-		// The arithmetic alone, no socket: one byte over the committed ceiling is a regression, and the message names both
-		// numbers so the log reads without the file open.
 		const baseline = await baselineOf();
 		const gate = verdict(baseline + 1, baseline);
 		assert.equal(gate.verdict, "regression");

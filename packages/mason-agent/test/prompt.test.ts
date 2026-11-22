@@ -1,8 +1,3 @@
-/**
- * What the agent is told about itself, the person it works for and its skills. These are the prompt sections, tested as
- * the text that reaches the system prompt: the soul opens it, the profile is declared data, and the skills index carries
- * pointers instead of bodies.
- */
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -35,10 +30,6 @@ import { BASE_EXTENSIONS } from "../src/server/runtime.ts";
 
 const directories = new Set<string>();
 
-/**
- * The tool machine: a real `pi-env` environment over a real daemon, which is what the agent's own files are read
- * through. Absolute paths, so its cwd is only a starting point.
- */
 const connection = new Connection({ command: daemonCommand(localDaemon()) });
 const toolMachine = new LocalExecutionEnv({ connection, cwd: tmpdir() });
 
@@ -47,26 +38,16 @@ after(async () => {
 	for (const directory of directories) await rm(directory, { recursive: true, force: true });
 });
 
-/** The turn a render happens in. The resident memo is keyed on it, so a test that edits a file advances it. */
 let turn = 0;
 
 function nextTurn(): void {
 	turn += 1;
 }
 
-/**
- * What a section is handed: the environment of the turn, the agent whose tools the codemode section declares, and the
- * live document it reads the turn's identity from.
- *
- * `taskId` is the turn, so a second render can be asked to happen in the next turn — which is the only way a test can
- * see whether the text is stable because the files are, or because the memo handed back the first render's string.
- */
 function promptInput(overrides: Record<string, unknown> = {}, taskId = turn): unknown {
 	return {
 		conversationId: 1,
 		env: toolMachine,
-		// A conversation with nothing to call: the codemode section renders `undefined` for it, like a real one that
-		// had no tools. `codemode.test.ts` renders it against a booted agent, which is where its text is pinned.
 		agent: { callable: [] },
 		read: { snapshot: async () => ({ run: { taskId, inputs: [] } }) },
 		...overrides,
@@ -79,18 +60,11 @@ async function tempDir(prefix: string): Promise<string> {
 	return directory;
 }
 
-/**
- * Point `housePaths()` at a temporary home for one test, and put the environment back afterwards.
- *
- * The soul and profile sections resolve the home when they render, so the environment is the seam; the real `~/.mason`
- * is never read.
- */
 async function withHouseHome(run: () => Promise<void>): Promise<void> {
 	const home = await tempDir("mason-prompt-house-");
 	const previous = process.env.MASON_HOME;
 	process.env.MASON_HOME = home;
 	try {
-		// Both halves, with the modes a fresh install creates: a section reads a file in a home that exists.
 		await ensureHouse(housePaths(), DEFAULT_SOUL);
 		await run();
 	} finally {
@@ -99,18 +73,12 @@ async function withHouseHome(run: () => Promise<void>): Promise<void> {
 	}
 }
 
-/** The declared section with this key — the prompt has exactly one registry, so there is nothing else to search. */
 function sectionOf(key: string): PromptSection {
 	const found = PROMPT_SECTIONS.find((promptSection) => promptSection.key === key);
 	assert.ok(found, `the prompt has a ${key} section`);
 	return found;
 }
 
-/**
- * A section as it reaches the system prompt, mirroring the engine's `renderSections` (not exported from the package's
- * root, so this is the rule restated): a tagged section is wrapped in its key, a tag-less one is passed through bare,
- * and a renderer that throws keeps the text that was already shown.
- */
 async function renderSection(
 	promptSection: PromptSection,
 	input: unknown = promptInput(),
@@ -120,8 +88,6 @@ async function renderSection(
 	try {
 		text = await promptSection.render(input as never, BACKGROUND_CONTEXT as never);
 	} catch (error) {
-		// The engine's rule, which is the reason a resident read is allowed to throw: the prompt keeps what it had and
-		// the request still goes out.
 		if (shown !== undefined) return shown;
 		throw error;
 	}
@@ -146,19 +112,7 @@ test("the soul section is soul.md when it exists, and DEFAULT_SOUL when it does 
 });
 
 test("the whole prompt fits in its budget, and the tool list is the six", async () => {
-	// A ceiling on the prompt, not on one section: this text is paid again on every turn of every conversation, and the
-	// sections grow a sentence at a time. Raising it is a decision, like raising a code ceiling. 4,000 became 4,400 for
-	// the reflection rule (#134), which is 641 characters of new resident text: 3,455 before it, 4,096 after. 4,400 became
-	// 5,600 for the delegation rule (#201 step 4), 1,301 characters of it: the tool exists and the model has to know when
-	// it is the wrong tool, that a worker cannot reach the person, and that a change is written and *then* reviewed.
-	// 5,600 became 5,700 when the integration contract (#222) put the tool count and docs pointer on each integration
-	// line, and the docs index learned a service's markdown resources: the resident prefix grew, which is the trade the
-	// contract chose, and the merged prompt is 5,641. 6,000 was the outbox rule (#225), four sentences of it; #235 cut
-	// that to one — a link is `out/...`, and a file reaches the reader only if the message links it — and the ceiling
-	// followed it down to 5,900. #237 moved the tools' cwd to the device home, so the rule now spells the workspace above
-	// the outbox (`workspace/out/...`), and the merged prompt is 5,870.
 	await withHouseHome(async () => {
-		// The module's integrations are global: a test that set some would otherwise be counted here.
 		setIntegrations({});
 		let total = 0;
 		for (const promptSection of PROMPT_SECTIONS) {
@@ -168,10 +122,6 @@ test("the whole prompt fits in its budget, and the tool list is the six", async 
 	});
 
 	const declared = BASE_EXTENSIONS.flatMap((extension) => (extension.tools ?? []).map((tool) => tool.name));
-	// `codemode` and `delegate` are built per boot (a sandbox and a lease directory die with the process, and a child's
-	// role is the boot's), so neither is in the base list, and the two are the last tools a request carries. Growing this
-	// list is a decision of its own: a tool is a declaration in every request, and a capability the model may use without
-	// asking a script for it.
 	assert.deepEqual([...declared, "delegate", "codemode"], ["read", "write", "edit", "bash", "delegate", "codemode"]);
 });
 
@@ -212,12 +162,6 @@ test("the tone section is rules about a reply, not a banned-word list", async ()
 	assert.ok(TONE.length < 700, `the tone section is ${TONE.length} characters`);
 });
 
-/**
- * The guards are the wording, and the wording is what the research measured a difference with: the log line rather than
- * the skill, a description short enough for a resident index, a skill retired by naming what replaced it. What code can
- * enforce of them is enforced elsewhere: `agent/` is what a deployment mounts, so `service/soul.md` is not reachable
- * from a tool there (ADR-0016 puts the image outside that claim); the rest is pinned here as text.
- */
 test("the reflect section is what a long turn owes the next one, guards included", async () => {
 	const rendered = await renderSection(sectionOf("reflect"));
 	assert.equal(rendered, `<reflect>\n${REFLECTION_RULE}\n</reflect>`, "tagged like its neighbours");
@@ -282,19 +226,12 @@ test("the profile section truncates an over-long profile instead of eating the p
 		const tail = lines[lines.length - 1] as string;
 		assert.ok(!rendered.includes(tail), "the tail of the file never reaches the prompt");
 
-		// The cut is reported after a complete line, not in the middle of one.
 		const [kept] = rendered.split(marker[0]);
 		const lastLine = kept?.trimEnd().split("\n").at(-1) ?? "";
 		assert.ok(lines.includes(lastLine), `the cut lands between lines, not inside one (${lastLine})`);
 	});
 });
 
-/**
- * The two rules of `resident.ts`, at the seam a reader can see: what the prompt says, and when it changes.
- *
- * An edit during a turn is not a mid-turn change of mind — the turn keeps the context it started with, and the next turn
- * reads the file again.
- */
 test("the profile section follows the file, one turn behind", async () => {
 	await withHouseHome(async () => {
 		nextTurn();
@@ -302,7 +239,6 @@ test("the profile section follows the file, one turn behind", async () => {
 		const first = await renderSection(sectionOf("profile"));
 		assert.match(first ?? "", /Denis prefers short answers\./);
 
-		// The same turn: the prompt is the one the turn started with, however many model requests it takes.
 		await writeFile(housePaths().profile, "Denis prefers long answers.\n", "utf8");
 		assert.equal(await renderSection(sectionOf("profile")), first, "a mid-turn edit does not disturb the turn");
 
@@ -313,13 +249,6 @@ test("the profile section follows the file, one turn behind", async () => {
 	});
 });
 
-/**
- * The failure rule: a tool machine that cannot answer leaves the prompt as it was. Returning `undefined` instead would
- * remove the section, and the agent would lose its memory to a sleeping machine.
- *
- * And it costs one round trip per file per turn, not one per model request: the memo records the failure, so a turn
- * that makes six requests against a sleeping machine waits for one timeout, not six.
- */
 test("an unreachable tool machine throws, keeps the shown profile, and is tried once per turn", async () => {
 	await withHouseHome(async () => {
 		nextTurn();
@@ -327,8 +256,6 @@ test("an unreachable tool machine throws, keeps the shown profile, and is tried 
 		const shown = await renderSection(sectionOf("profile"));
 		assert.ok(shown !== undefined);
 
-		// A new turn, and an environment that cannot answer: the connection is gone, which is what a sleeping tool
-		// machine looks like. It counts its reads, because "one failed round trip per turn" is a claim this test makes.
 		nextTurn();
 		const unreachable = () => {
 			const env = {
@@ -358,9 +285,6 @@ test("an unreachable tool machine throws, keeps the shown profile, and is tried 
 	});
 });
 
-/**
- * The memo is a cost, not a policy: two conversations busy at the same time must not evict each other and pay twice.
- */
 test("two busy conversations keep their own turn memo", async () => {
 	await withHouseHome(async () => {
 		nextTurn();
@@ -382,10 +306,6 @@ test("two busy conversations keep their own turn memo", async () => {
 	});
 });
 
-/**
- * A skill written a minute ago is in the index of the next request: the scan is cached by the roots' modification times
- * and re-probed on every render, so writing a skill is enough to use it.
- */
 test("the skills section picks up a skill written after the first render", async () => {
 	await withHouseHome(async () => {
 		const paths = housePaths();
@@ -403,7 +323,6 @@ test("the skills section picks up a skill written after the first render", async
 			join(paths.skillsDir, "second", "SKILL.md"),
 			"---\nname: second\ndescription: The second one.\n---\n",
 		);
-		// A directory's mtime moves when an entry is added; the probe sees it on the next render, in the same turn.
 		const after = (await renderSection(sectionOf("skills"))) ?? "";
 		assert.match(after, /second/, "the skill written a moment ago is indexed");
 		assert.match(after, /first/, "and the one beside it is still there");
@@ -429,12 +348,6 @@ test("discoverSkills() finds nested SKILL.md files and reads their frontmatter",
 	assert.ok(isAbsolute(skill.filePath), "the location is absolute, so the model can read it from any cwd");
 });
 
-/**
- * The listing sort, which the rendered index cannot show on its own: two skills that declare the same name resolve to
- * whichever file the walk reaches first, so the walk has to be ordered by entry name rather than by whatever order the
- * filesystem returns. A stub environment is the only way to say that — a real `readdir` gives a different order on every
- * filesystem and on some of them an apparently stable one — and the point being pinned is that the order must not matter.
- */
 test("discoverSkills() walks in entry-name order, so a duplicate name resolves the same way everywhere", async () => {
 	const contents: Record<string, string> = {
 		"/skills/zeta-copy/SKILL.md": "---\nname: weekly\ndescription: Created first.\n---\n",
@@ -449,7 +362,6 @@ test("discoverSkills() walks in entry-name order, so a duplicate name resolves t
 	});
 	const listing = (path: string) => {
 		if (path === "/skills") {
-			// Deliberately not alphabetical: the reverse of the order the index must produce.
 			return [entry("/skills/zeta-copy", "directory"), entry("/skills/alpha-copy", "directory")];
 		}
 		const file = `${path}/SKILL.md`;
@@ -518,7 +430,6 @@ test("a skill without a frontmatter name is named after its directory", async ()
 	);
 
 	const skills = await discoverSkills(toolMachine, [personal, shipped], BACKGROUND_CONTEXT);
-	// pi's loader falls back to the folder name, which is already the label a person reads.
 	assert.deepEqual(
 		skills.map((skill) => ({ name: skill.name, description: skill.description, path: skill.filePath })),
 		[{ name: "misc", description: "Unnamed helper.", path: join(shipped, "misc/SKILL.md") }],
@@ -554,10 +465,6 @@ test("renderSkills() lists each skill's name, description and absolute path, and
 	}
 });
 
-/**
- * The other half of the webhook fence: the model is told what a fence means, in the section that explains the turn it
- * is reading. Without this the marker is decoration; without the marker the rule points at nothing.
- */
 test("the wake rule carries the untrusted-payload rule and names the markers the fence writes", async () => {
 	const guidelines = (await renderSection(sectionOf("preamble"))) ?? "";
 	assert.match(guidelines, /\[begin untrusted payload/);
@@ -566,21 +473,11 @@ test("the wake rule carries the untrusted-payload rule and names the markers the
 	assert.match(guidelines, /check\nwith the user before doing anything about it|check with the user/);
 });
 
-/**
- * The reason the prefix is assembled this way: a section whose bytes differ between two renders of unchanged files
- * silently invalidates the provider's prompt cache on every turn, and nothing else in the suite would notice.
- *
- * The second render happens in the *next* turn. Two renders inside one turn prove nothing — the per-turn memo hands
- * back the first string whatever the scanner did — and the skills order is the part most likely to drift, so the home
- * is given skills whose walk order (by directory, case-sensitively sorted) is not their name order.
- */
 test("every section renders byte-identically in the next turn, so an unchanged conversation keeps its cache", async () => {
 	await withHouseHome(async () => {
 		const paths = housePaths();
 		await writeFile(paths.soul, "You are SOUL-STABILITY, a test agent.\n", "utf8");
 		await writeFile(paths.profile, "# Denis\nPrefers short answers and numbers to adjectives.\n", "utf8");
-		// The directories are named so the walk reaches `zeta` first and the index has to say `alpha` first: the name of
-		// a skill is its frontmatter, and a directory name is only the fallback.
 		for (const [directory, name] of [
 			["a-zeta", "zeta"],
 			["b-alpha", "alpha"],
@@ -596,15 +493,10 @@ test("every section renders byte-identically in the next turn, so an unchanged c
 		const skills = (await renderSection(sectionOf("skills"))) ?? "";
 		assert.match(skills, /alpha/);
 		assert.match(skills, /zeta/);
-		// The declared names are the order, not the order the directories happen to come back in.
 		assert.ok(
 			skills.indexOf("The alpha one.") < skills.indexOf("The zeta one."),
 			"the index is ordered by skill name, whatever order the walk found them in",
 		);
-		// Every section, including the resident ones: the profile and the skills index are the bytes that could drift.
-		// The second render is asked for in the next turn, so it re-reads the files instead of being handed this turn's
-		// memo: identical bytes across the boundary is what keeps the provider's cached prefix valid, and a section that
-		// only looked stable because the memo answered for it would not keep it.
 		for (const promptSection of PROMPT_SECTIONS) {
 			const first = await renderSection(promptSection, promptInput());
 			nextTurn();
@@ -614,10 +506,6 @@ test("every section renders byte-identically in the next turn, so an unchanged c
 	});
 });
 
-/**
- * A skill's description is edited in place — no entry appears, no directory's mtime moves in a way a root probe would
- * see. The index has to follow the file, or the prompt goes on describing a skill by what it used to say.
- */
 test("the skills index follows a description edited in place", async () => {
 	await withHouseHome(async () => {
 		const paths = housePaths();
@@ -643,10 +531,6 @@ test("an empty home renders no skills section at all", async () => {
 	);
 });
 
-/**
- * The integration list is one snapshot filled at boot (`setIntegrations`): a test sets it and puts back the empty one a
- * process that never configured a home has.
- */
 async function withIntegrations(
 	integrations: Record<string, Integration>,
 	run: () => Promise<void>,
@@ -673,17 +557,11 @@ const DOCS: Integration = {
 	mcp: { url: "http://mason-docs:8080/mcp" },
 };
 
-/**
- * The section that connects a name the model can read to a tool it was never offered: every enabled integration, the
- * tool count a script will find, and the docs page it can read. Name, count and pointer only — no health (it changes
- * between turns), no tool names, no schemas.
- */
 test("the integrations section is one sorted line per enabled integration, with its tool count and docs pointer", async () => {
 	await withIntegrations(
 		{
 			github: GITHUB,
 			docs: DOCS,
-			// An entry with no MCP server is still an integration the prompt names; it lends no tools.
 			activity: { enabled: true, description: "Never a tool" },
 			old: { enabled: false, description: "Turned off", mcp: { url: "http://mason-old:8080/mcp" } },
 		},
@@ -756,11 +634,6 @@ test("the integrations section renders the same bytes twice, and equally for a r
 	);
 });
 
-/**
- * The two ends of the prompt are fixed. The soul is the first thing the model reads and the delivery rule is the last,
- * because the eval suite measured that position: a fact recalled in a later turn was delivered 0/2 times when the rule
- * sat fourth. So everything added since — integrations, code mode — sits between them.
- */
 test("the delivery rule names workspace/out/ in one sentence, and the retired file: spelling is gone", async () => {
 	const text = (await renderSection(sectionOf("delivery"))) ?? "";
 	assert.match(
@@ -785,10 +658,6 @@ test("the prompt opens with the soul and closes with the delivery rule", () => {
 	assert.ok(keys.indexOf("reflect") < keys.indexOf("delivery"));
 });
 
-/**
- * The point of `prompt.ts`: nothing else may add a section, so reading one file tells you everything the agent is told.
- * A new extension that quietly contributes prompt text would pass every other test in this file.
- */
 test("the prompt is one registry: no other extension brings a section, and the order is the documented one", () => {
 	const strays = BASE_EXTENSIONS.filter(
 		(extension) => extension.name !== Prompt.name && (extension.sections?.length ?? 0) > 0,
@@ -796,37 +665,19 @@ test("the prompt is one registry: no other extension brings a section, and the o
 	assert.deepEqual(strays, [], "only the prompt extension declares sections");
 	assert.deepEqual(promptSectionKeys(), [
 		"preamble",
-		// Voice, before anything about the environment: it governs every sentence the agent writes.
 		"tone",
 		"cwd",
 		"skills",
 		"profile",
-		// The reference the agent reads about this machine, and what it holds: nothing a connector or a routine can add
-		// to the prompt, because a document grows without a token costing anything until the agent opens it.
 		"docs",
-		// What exists beyond the tool list, and then the tools a script can call: a capability and the way to reach it
-		// sit next to each other, and both before the two rules about the turn's ending.
 		"integrations",
 		"codemode",
-		// Handing a bounded task off and getting the answer back: one more way to reach something, and the only one that
-		// spends another model's turn.
 		"delegate",
-		// What a long turn owes the next one: the memory it keeps, which is the only part of the turn that outlives it.
 		"reflect",
-		// Last because the rule that decides whether the reader hears anything should be closest to the turn. The
-		// eval suite measured the difference: a fact recalled in a later turn was delivered 0/2 times when this
-		// section sat fourth, and once it moved here.
 		"delivery",
 	]);
 });
 
-/**
- * The one `docs` section points at mason's own reference on the tool machine and at nothing else.
- *
- * pi's default prompt carries a `docs` section naming its README and `docs/` tree, so a coding agent can read how to
- * change its own extensions. mason's agent is not that agent: it may read how this machine works, and not how the
- * machinery that runs it is built. The distinction is the path, so the path is what this test reads.
- */
 test("the docs section indexes the shipped pages and a service's resources, and names no mount", async () => {
 	await withHouseHome(async () => {
 		await withIntegrations(

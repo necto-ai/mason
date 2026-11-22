@@ -1,20 +1,3 @@
-/**
- * `mason init` — the common store, once per root, and nothing written before the provider answers.
- *
- * Flags are the only way in. There is no terminal to ask: a scripted first run and a person at a keyboard take the same
- * path, and a run that is short of an answer says which flag it is short of instead of opening a question nobody
- * scripted. The three answers are a provider, a model and a key, and the order is the point: the key is checked with one
- * real completion before any of the three is stored (`docs/research/openclaw-cli.md` §1.6). A key that is stored first
- * is a bot that boots into a provider error on its first turn; a key that is tried first is a first run that ends in
- * either "the provider answered" or one sentence naming what was wrong.
- *
- * Running it a second time asks nothing. The store exists, the key is where it belongs, and the command says so — which
- * is what makes `mason init` safe to run again (#147, criterion 2). Passing a flag is the deliberate way to change one,
- * and that run verifies and rewrites like the first.
- *
- * The write is one commit under the auth lock: `common/settings.json`, `common/auth.json`, and `common/runtime.json` if
- * it does not exist yet, each copied aside with a timestamp before it is replaced.
- */
 import { existsSync } from "node:fs";
 import {
 	assertCommonStoreReadable,
@@ -48,7 +31,6 @@ export function usage(): string {
   The store is <MASON_ROOT or ~/.mason>/common, 0600, and nothing in it is ever printed again.`;
 }
 
-/** The flags, in the two spellings a person types. */
 export function parseArgs(argv: readonly string[]): InitArgs {
 	let provider: string | undefined;
 	let model: string | undefined;
@@ -92,7 +74,6 @@ export function parseArgs(argv: readonly string[]): InitArgs {
 	};
 }
 
-/** The command. Returns an exit code rather than calling `process.exit`, so a test can run the flow in-process. */
 export async function runInit(
 	argv: readonly string[],
 	options: { readonly root?: string; readonly access?: ProviderAccess } = {},
@@ -125,8 +106,6 @@ export async function runInit(
 					"`--provider <id> --model <id>`, and `--key <key>` for a provider that needs one",
 			);
 		}
-		// The offline provider is chosen by the switch the runtime plays a model under, never by a provider id: a real
-		// catalog has no "faux" provider, and `mason init` with PI_FAUX_MODEL=1 is the scripted first run.
 		const access = options.access ?? (await openProviders({ faux: process.env.PI_FAUX_MODEL === "1" }));
 		const known = providerIds(access);
 		const provider = args.provider;
@@ -135,14 +114,12 @@ export async function runInit(
 			throw new Error(`there is no provider "${provider}": this build knows ${known.join(", ")}`);
 		const model = args.model;
 		if (model === undefined) throw new Error("--model <id> is missing: the model every bot under this root runs");
-		// A provider that needs a key is the one this build does not have a scripted answer for: the faux one takes none.
 		const key = access.faux ? undefined : args.key;
 		if (!access.faux && key === undefined)
 			throw new Error(
 				`--key <key> is missing: ${provider} answers for a key, and it is verified before anything is written ` +
 					`(it is stored in ${paths.auth}, 0600, and never printed again)`,
 			);
-		// Before the completion, not after it: a store that cannot be rewritten is one sentence, and a spent verify is not.
 		await assertCommonStoreReadable(root.root);
 		console.log(`[init] verifying ${provider}/${model} with one completion…`);
 		const reply = await verifyCompletion(access, { provider, modelId: model }, key);
@@ -153,8 +130,6 @@ export async function runInit(
 			defaultModel: model,
 			...(key === undefined ? {} : { key }),
 		});
-		// `writeCommonStore` writes `runtime.json` only when there is none, and the check has to be *before* the write:
-		// testing it afterwards was a clause that could never be true.
 		console.log(`[init] wrote ${paths.settings}, ${paths.auth}${wroteRuntime ? ` and ${paths.runtime}` : ""}`);
 		console.log("[init] next: `mason new <name>` creates the bot");
 		return 0;

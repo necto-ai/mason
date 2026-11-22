@@ -1,9 +1,3 @@
-/**
- * The four headers pi's image ceiling reads, before anything is inlined into a request.
- *
- * This is a duplicate of pi's own header reader because the package does not publish it; the values are pinned here so a
- * wrong offset cannot silently inline an image over 2000×2000, or refuse one inside it.
- */
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -15,14 +9,12 @@ import { DeviceLostError } from "../src/server/env.ts";
 import { createInbox, imageDimensions } from "../src/server/inbox.ts";
 import { CONNECTOR_ENTRY_KIND } from "../src/shared/contract.ts";
 
-/** The hook `createInbox` registers, as `hooks.each` calls it: the request in, the request it wants sent out. */
 type BeforeRequest = (
 	request: { messages: readonly unknown[] },
 	api: unknown,
 	context: unknown,
 ) => Promise<{ messages: readonly unknown[] } | undefined>;
 
-/** A PNG signature and its IHDR width and height. */
 function png(width: number, height: number): Buffer {
 	const bytes = Buffer.alloc(24);
 	Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(bytes);
@@ -88,13 +80,6 @@ describe("the image dimensions an inline decision reads", () => {
 	}
 });
 
-/**
- * The turn's machine, when the turn cannot have one.
- *
- * `hooks.each` in pi-durable catches a throwing hook, reports it as an `extension_error` and sends the request anyway, so
- * a device that is gone would leave the model the line's `[file: ~/inbox/…]` path and no file — the failure this whole
- * path exists to remove. The hook therefore answers with the refusal line, and the turn continues.
- */
 describe("a turn whose device is gone", () => {
 	it("refuses each inbound ref with the existing line instead of throwing the hook away", async () => {
 		const dataDir = await mkdtemp(join(tmpdir(), "mason-inbox-lost-"));

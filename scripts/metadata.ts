@@ -1,29 +1,3 @@
-/**
- * `npm run check:metadata` — the manifest a publisher reads, compared with the tree it is about.
- *
- * A manifest is read twice by two different people: by npm, which takes what it finds, and by a stranger on the package's
- * page, who decides whether to install it. Neither of those readers fails. A field that went missing is a page with no
- * repository link, a `files` entry that names nothing is a directory the tarball silently does not carry, and a declared
- * Node floor below a dependency's is an install that works on the machine it was published from. Every one of them is a
- * fact two files state and, until this check, nothing compared.
- *
- * The comparisons, each read from where it is written rather than from a policy file that would drift like NOTICE did:
- *
- * - the published runtime's publishable fields, because that is the npm page;
- * - every `files` entry, against the tree — npm includes an entry only when it exists, and the one a build writes is the
- *   one that goes missing; that entry is exempt here and proven where it belongs, by the checks that install the tarball;
- * - `prepack` on both published packages: without it a `npm publish` from a checkout packs the sources, and a consumer's
- *   Node refuses to strip types in `node_modules`;
- * - the declared Node floor, against the floor of every dependency it declares, read out of the lockfile's installed
- *   tree. Only a `>=` floor is compared; anything else is a refusal rather than a guess, because a range this check does
- *   not understand is a floor nobody is measuring;
- * - a host's home path in a file a stranger reads. `/home/<name>/` and `/Users/<name>/` are the maintainer's machine,
- *   published as if it were everybody's; `/home/mason/` is the container's account and is the one allowed.
- *
- * What it does not scan is as deliberate as what it does. Code, tests and build output are not files a stranger is handed,
- * and they carry example paths on purpose — a fixture with a home in it is a fixture about a home — while `docs/research/`
- * quotes other projects verbatim. The prose, the deploy files and the manifests are where a home path is a leak.
- */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -31,44 +5,30 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 
-/** The three manifests npm publishes from this repository. */
 const MANIFESTS = [
 	"packages/mason-agent/package.json",
 	"packages/protocol/package.json",
 	"packages/client/package.json",
 ] as const;
 
-/** The two workspace packages: published on their own, so each needs its own build before npm touches it. */
 const WORKSPACES = MANIFESTS;
 
-/** The fields a stranger's first look is made of, on the published runtime: the package's npm page. */
 const PUBLISHABLE = ["description", "keywords", "homepage", "repository", "license"] as const;
 
-/** A declared floor this check can compare: `>=26.4`, `>=22.19.0`. Nothing looser, because an open range states none. */
 const FLOOR = /^>=\s*(\d+)\.(\d+)(?:\.(\d+))?$/;
 
-/** A home directory that belongs to a person rather than to the container's own account. */
 const HOST_HOME = /\/(?:home|Users)\/([A-Za-z0-9_.-]+)\//g;
 
-/** The one account a path in this repository may name: the container's, which is the same path on every host. */
 const CONTAINER_HOME = "mason";
 
-/** Directories whose files a stranger is not handed: code, tests, tooling, build output. */
 const NOT_SHIPPED = new Set(["src", "test", "tests", "scripts", "evals", "node_modules", "dist"]);
 
-/**
- * A `files` entry the package's own `prepack` writes, so it is not in a fresh clone by design. The checks that install
- * the tarball are what prove it arrived — `prove:package` boots the installed `dist/`, `prove:client` imports both
- * packages' — and requiring it here would only make this check need a build to run.
- */
 const BUILT = new Set(["dist"]);
 
 const read = (path: string): string => readFileSync(join(root, path), "utf8");
 
 interface Manifest {
-	/** Where it is, relative to the repository root: the name in every message. */
 	readonly path: string;
-	/** The directory its `files` entries and its dependencies resolve against. */
 	readonly dir: string;
 	readonly json: {
 		readonly dependencies?: Readonly<Record<string, string>>;
@@ -86,7 +46,6 @@ function manifests(): Manifest[] {
 	}));
 }
 
-/** The installed tree's view of one package: the lockfile entry a dependency resolves to, following a workspace link. */
 interface Installed {
 	readonly where: string;
 	readonly floor: string | undefined;
@@ -95,7 +54,6 @@ interface Installed {
 function installed(lock: Readonly<Record<string, InstalledEntry>>, name: string): Installed {
 	const entry = lock[`node_modules/${name}`];
 	if (entry === undefined) return { where: name, floor: undefined };
-	// A workspace is a symlink in `node_modules` and a directory of its own in the lock; its engines are on the target.
 	const target = entry.link === true && entry.resolved !== undefined ? lock[entry.resolved] : entry;
 	if (entry.link === true && target === undefined) return { where: name, floor: undefined };
 	return { where: entry.link === true ? String(entry.resolved) : name, floor: target?.engines?.node };
@@ -107,7 +65,6 @@ interface InstalledEntry {
 	readonly resolved?: string;
 }
 
-/** A parsed `>=x.y.z`, or `undefined` when the range is one this check refuses to interpret. */
 function floor(range: string): readonly [number, number, number] | undefined {
 	const match = FLOOR.exec(range.trim());
 	if (match === null) return undefined;
@@ -122,7 +79,6 @@ function compare(left: readonly number[], right: readonly number[]): number {
 	return 0;
 }
 
-/** Every tracked file whose content a stranger receives, as the repository records it. */
 function shipped(): string[] {
 	const listed = execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" }).split("\0");
 	return listed.filter((path) => path !== "" && ships(path));
@@ -134,7 +90,6 @@ function ships(path: string): boolean {
 	return !segments.some((segment) => NOT_SHIPPED.has(segment));
 }
 
-/** The manifest's publishable facts, in the order a stranger meets them on the package's page. */
 function publishable(manifest: Manifest): string[] {
 	const problems: string[] = [];
 	for (const field of PUBLISHABLE) {
@@ -155,7 +110,6 @@ function publishable(manifest: Manifest): string[] {
 	return problems;
 }
 
-/** Every `files` entry, against the tree it promises. */
 function files(manifest: Manifest): string[] {
 	const problems: string[] = [];
 	for (const entry of manifest.json.files ?? []) {
@@ -165,7 +119,6 @@ function files(manifest: Manifest): string[] {
 	return problems;
 }
 
-/** The declared floor, against the floor of everything the manifest depends on. */
 function engines(manifest: Manifest, lock: Readonly<Record<string, InstalledEntry>>): string[] {
 	const problems: string[] = [];
 	const declared = manifest.json.engines?.node;
@@ -196,7 +149,6 @@ function engines(manifest: Manifest, lock: Readonly<Record<string, InstalledEntr
 	return problems;
 }
 
-/** Every home path a stranger would read as their own. */
 function homes(): string[] {
 	const problems: string[] = [];
 	for (const path of shipped()) {
@@ -211,7 +163,6 @@ function homes(): string[] {
 	return problems;
 }
 
-/** Every disagreement, in the order a reader meets them. Empty is the pass. */
 export function problems(): string[] {
 	const found: string[] = [];
 	const lock = (JSON.parse(read("package-lock.json")) as { packages: Record<string, InstalledEntry> }).packages;

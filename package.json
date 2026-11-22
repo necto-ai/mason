@@ -34,6 +34,7 @@
 		"gen:surface:check": "npm run gen:surface:check -w mason-agent",
 		"check:docs": "npm run check:docs -w mason-agent",
 		"check:code": "npm run check:code -w mason-agent",
+		"check:comments": "node --experimental-strip-types scripts/comments.ts",
 		"check:licence": "node --experimental-strip-types scripts/licence.ts",
 		"check:metadata": "node --experimental-strip-types scripts/metadata.ts",
 		"build:packages": "npm run build -w mason-protocol && npm run build -w mason-client",

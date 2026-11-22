@@ -1,14 +1,8 @@
-/**
- * The prompt-cache report of a finished run: the arithmetic behind the one log line (`hit` share, a first turn that
- * reads nothing from the cache, a partial ledger), and the tolerance that keeps a missing field from becoming garbage
- * in the log.
- */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ConversationView } from "@earendil-works/pi-durable";
 import { cacheLine, createCacheReporter, usageOf, usageSince } from "../src/server/status.ts";
 
-/** A view whose `pi.usage` ledger is exactly what the test passes, as the durable layer commits it. */
 function viewOf(ledger: unknown): ConversationView {
 	return { entries: [], docs: { "pi.usage": ledger } } as unknown as ConversationView;
 }
@@ -31,7 +25,6 @@ describe("the cache line", () => {
 	it("reports a first turn, which reads nothing from the cache, as a total miss", () => {
 		const line = cacheLine({ input: 2400, cacheRead: 0, cacheWrite: 0 }, "run-1");
 		assert.equal(line, "[cache] run=run-1 in=2400 cacheRead=0 hit=0.0 miss=2400");
-		// One line, in the format an operator can grep: nothing else sneaks in.
 		assert.match(line ?? "", /^\[cache\] run=run-1 in=\d+ cacheRead=\d+ hit=\d+\.\d miss=\d+$/);
 	});
 
@@ -55,7 +48,6 @@ describe("the cache line", () => {
 		assert.equal(cacheLine(undefined, "run-4"), undefined);
 		assert.equal(cacheLine({}, "run-4"), undefined);
 		assert.equal(cacheLine({ input: 0, cacheRead: 0, cacheWrite: 0 }, "run-4"), undefined);
-		// A counter that arrived as JSON, but not as a token count, is not one.
 		assert.equal(cacheLine({ input: Number.NaN, cacheRead: Number.POSITIVE_INFINITY }, "run-5"), undefined);
 	});
 });
@@ -88,12 +80,10 @@ describe("the ledger a run is measured against", () => {
 			usageSince({ input: 1_300, cacheRead: 30_300, cacheWrite: 400 }, { input: 300, cacheRead: 30_000 }),
 			{ input: 1_000, cacheRead: 300, cacheWrite: 400 },
 		);
-		// A ledger that is read again after it shrank is not a negative spend.
 		assert.deepEqual(usageSince({ input: 10 }, { input: 20 }), { input: 0, cacheRead: 0, cacheWrite: 0 });
 	});
 });
 
-/** A view with a run in flight, so the reporter treats the next idle frame as the end of that run. */
 function busyView(runId: string, ledger: unknown): ConversationView {
 	return {
 		entries: [],
@@ -101,7 +91,6 @@ function busyView(runId: string, ledger: unknown): ConversationView {
 	} as unknown as ConversationView;
 }
 
-/** The same conversation with nothing running. */
 function idleView(ledger: unknown): ConversationView {
 	return { entries: [], docs: { "pi.usage": ledger, "pi.live": {} } } as unknown as ConversationView;
 }
@@ -125,7 +114,6 @@ describe("the reporter that watches runs", () => {
 			"[cache] run=r2 in=50 cacheRead=0 hit=0.0 miss=50",
 		]);
 
-		// A reconnect replays idle frames: none of them repeats a line or starts a run.
 		report(idleView({ models: { m: { input: 450, cacheRead: 300 } } }));
 		assert.equal(lines.length, 2);
 	});

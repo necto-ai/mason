@@ -1,14 +1,3 @@
-/**
- * The integration list: one file in the server's half, the command that edits it, and the route that reports on it.
- *
- * What matters here is the shape of a failure. An empty integration list quietly removes tools, so a file mason cannot
- * read or cannot validate refuses the boot, naming the path — never an empty set. A rewrite keeps every key mason does
- * not understand, because the file grows and a hand-written note is not mason's to drop. The signed event door's
- * `trigger` is gone (#104), so a file that still names one is refused and the migration that removes it is tested here.
- *
- * The two files are tested apart from each other: the list on disk through `readIntegrations` and the command, and the
- * route through a started server — a reachable server is a fake MCP server on an in-memory transport, never a port.
- */
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
@@ -35,7 +24,6 @@ after(async () => {
 	for (const directory of directories) await rm(directory, { recursive: true, force: true });
 });
 
-/** A home that exists but holds nothing: the state a fresh install is in before anything is written. */
 async function temporaryHome(): Promise<HousePaths> {
 	const directory = await mkdtemp(join(tmpdir(), "mason-integrations-"));
 	directories.add(directory);
@@ -44,7 +32,6 @@ async function temporaryHome(): Promise<HousePaths> {
 	return paths;
 }
 
-/** A file as a person would leave it: hand-written, possibly before this code knew the shape. */
 async function writeRaw(paths: HousePaths, text: string): Promise<void> {
 	await mkdir(dirname(paths.integrations), { recursive: true, mode: 0o700 });
 	await writeFile(paths.integrations, text, { encoding: "utf8", mode: 0o600 });
@@ -56,7 +43,6 @@ const github: Integration = {
 	mcp: { url: "http://mason-github:8082/mcp" },
 };
 
-/** The refusal a file earns, as the operator reads it. */
 async function refusal(paths: HousePaths): Promise<string> {
 	try {
 		await readIntegrations(paths);
@@ -107,7 +93,6 @@ describe("the integration list on disk", () => {
 		assert.equal(stored.integrations.github?.note, "hand-written, and not mason's to drop");
 		assert.deepEqual(stored.integrations.github?.mcp, { url: "http://mason-github:8082/mcp", owner: "denis" });
 		assert.deepEqual(Object.keys(stored.integrations), ["docs", "github"], "the file is in a stable order");
-		// The description is a line in the prompt: the space around it is nobody's intent.
 		assert.equal(stored.integrations.docs?.description, "The internal documentation server");
 	});
 
@@ -190,7 +175,6 @@ describe("the integration list on disk", () => {
 	});
 
 	it("refuses an mcp url that is not an http endpoint", async () => {
-		// `mason-github:8082/mcp` is the shape a person writes without the scheme: a real URL, of no usable protocol.
 		for (const url of ["mason-github:8082/mcp", "ftp://mason-github/mcp", "file:///mcp", ""]) {
 			const paths = await temporaryHome();
 			await writeRaw(paths, JSON.stringify({ integrations: { github: { ...github, mcp: { url } } } }));
@@ -209,14 +193,11 @@ describe("the integration list on disk", () => {
 		assert.match(await refusal(paths), /"mcp.required" that is not true or false/);
 
 		await writeRaw(paths, JSON.stringify({ integrations: { github: { ...github, enabled: "false" } } }));
-		// The string "false" is truthy: read as a boolean it would leave an integration on that its author believed off.
 		assert.match(await refusal(paths), /needs "enabled": true or "enabled": false/);
 	});
 
 	it("refuses a file that still names the signed event door, and says what to delete", async () => {
 		const paths = await temporaryHome();
-		// The door is gone (#104). Reading past a secret nothing checks would leave a sender that looks configured and
-		// receives nothing, so the boot refuses and says which command removes it.
 		await writeRaw(
 			paths,
 			JSON.stringify({
@@ -238,8 +219,6 @@ describe("the integration list on disk", () => {
 
 	it("refuses the entry key the MCP server was called before it was named for what it is", async () => {
 		const paths = await temporaryHome();
-		// `tools` is a key nothing validates any more, so reading past it would boot the entry with no MCP server and
-		// nothing to say so: the refusal is the only thing that makes the rename visible.
 		await writeRaw(
 			paths,
 			JSON.stringify({
@@ -254,8 +233,6 @@ describe("the integration list on disk", () => {
 
 	it("refuses a grant with nothing on the socket, an MCP server alone is not a face", async () => {
 		const paths = await temporaryHome();
-		// The entry has an MCP server, and the grant carries controls and no face: the connector would open a socket it
-		// was never granted anything to do on, and `commands` alone is not a conversation.
 		await writeRaw(
 			paths,
 			JSON.stringify({ integrations: { github: { ...github, connector: { commands: ["stop"] } } } }),
@@ -281,8 +258,6 @@ describe("the integration list on disk", () => {
 		const booted = (await readIntegrations(paths)).integrations.telegram?.connector;
 		assert.equal(booted?.user?.owner, "8811");
 
-		// Each retired key is a file whose reader believes it still decides who may speak (#126). The refusal names the key
-		// rather than reading past a setting that no longer exists.
 		for (const [key, retired] of [
 			["actors", { "8811": "Denis" }],
 			["unattributed", true],
@@ -305,8 +280,6 @@ describe("the integration list on disk", () => {
 			assert.match(refused, /by hand/, key);
 		}
 
-		// The room list and the places a message may be sent to were carried in three spellings. Every one is the same
-		// removal, and every refusal names the rule that replaced them: an answer goes back where the words came from.
 		for (const [connector, retiredPath] of [
 			[{ user: { owner: "8811" }, conversations: [] }, "connector.conversations"],
 			[{ user: { owner: "8811", conversations: [] } }, "connector.user.conversations"],
@@ -317,15 +290,10 @@ describe("the integration list on disk", () => {
 			assert.match(refused, new RegExp(retiredPath.replaceAll(".", "\\.")), retiredPath);
 			assert.match(refused, /an answer goes back to the connector that carried the words/, retiredPath);
 			assert.match(refused, /by hand/, retiredPath);
-			// The user face's own list is refused by the face's reader; the block's list is refused here. A `connector.targets`
-			// that was a grant's only face would otherwise take two boots to repair — this key gone, then "grants nothing" —
-			// so that refusal names the face to write instead, and one edit is enough.
 			if (retiredPath === "connector.targets")
 				assert.match(refused, /a grant that grants nothing is refused too/, retiredPath);
 		}
 
-		// The grant keys the approval apparatus owned were required once, so every file written before the cut carries
-		// one. Reading past them would leave an operator believing a rule still runs.
 		for (const key of RETIRED_GRANT_KEYS) {
 			await writeRaw(
 				paths,
@@ -343,7 +311,6 @@ describe("the integration list on disk", () => {
 			assert.match(refused, /by hand/, key);
 		}
 
-		// An owner that is not an actor id is refused as well: an empty string is nobody, spelled as if it were somebody.
 		await writeRaw(
 			paths,
 			JSON.stringify({
@@ -442,10 +409,6 @@ describe("the integration list on disk", () => {
 	});
 });
 
-/**
- * The command itself, spawned the way an operator runs it: `npm run integration -- …` with `MASON_HOME` pointing at a
- * temporary home, so the assertion is the file it wrote and the line it printed rather than the module's API.
- */
 describe("the integration command", () => {
 	const script = fileURLToPath(new URL("../scripts/integration.ts", import.meta.url));
 
@@ -557,8 +520,6 @@ describe("the integration command", () => {
 
 		const enabled = await integration(paths.home, "enable", "telegram");
 		assert.match(enabled.stdout, /enabled telegram/);
-		// The write lands — the enforcement is the boot's — and the command says what its own write made, as `mason chat`
-		// does, with the same sentence.
 		assert.match(
 			enabled.stdout,
 			/this home grants a person's words to "console" and "telegram": one bot works for one person, so mason refuses this home at boot until one of them is switched off, by hand/,
@@ -566,7 +527,6 @@ describe("the integration command", () => {
 		const refused = (await readIntegrations(paths)).integrations;
 		assert.throws(() => assertOneUserGrant(paths.integrations, refused), /at most one enabled connector may carry a/);
 
-		// Switching one off is the repair, it says nothing about the rule, and the boot takes the home again.
 		const disabled = await integration(paths.home, "disable", "telegram");
 		assert.doesNotMatch(disabled.stdout, /person's words/);
 		const repaired = (await readIntegrations(paths)).integrations;
@@ -575,7 +535,6 @@ describe("the integration command", () => {
 
 	it("prints the home and the file it edits when it is asked how to be used", async () => {
 		const paths = await temporaryHome();
-		// No command: the usage block, which is where a person looks first.
 		const usage = await integration(paths.home);
 		assert.match(usage.stdout, new RegExp(`home: ${paths.home}`));
 		assert.ok(usage.stdout.includes(paths.integrations), "the block names the file, not just the home");

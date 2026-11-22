@@ -1,9 +1,5 @@
 import type { ConnectorStore, StoreEntry } from "./store.ts";
 
-/**
- * A store in memory and nowhere else. **Test-only.** A connector that uses this in production silently forgets its
- * outbound journal and its dedup ledger on every restart, which is precisely the failure the store exists to prevent.
- */
 export class MemoryStore implements ConnectorStore {
 	readonly kind = "memory";
 	private readonly namespaces = new Map<string, Map<string, StoreEntry<unknown>>>();
@@ -42,7 +38,6 @@ export class MemoryStore implements ConnectorStore {
 		for (const entry of ordered.slice(0, ordered.length - keep)) bucket.delete(entry.key);
 	}
 
-	/** Every key a namespace holds, which a test needs and a connector does not. */
 	keys(namespace: string): readonly string[] {
 		return [...this.bucket(namespace).keys()];
 	}

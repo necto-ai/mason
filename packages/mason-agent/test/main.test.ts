@@ -1,11 +1,3 @@
-/**
- * The four commands, as a chat meets them: what each one calls, what it answers, and what it refuses to do twice.
- *
- * The conversation is a stub here, which is the point: the dispatch is a function over five ports (`CommandTarget`), so
- * a test can read what `/stop` did without a provider, a turn or a clock. The real conversation is exercised at the door
- * (`test/connector.test.ts`), and the sentence `/status` answers with is derived in `status.ts` — pinned at the end of
- * this file against synthetic views, because a status line is arithmetic over what the client already shows.
- */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ConversationView } from "@earendil-works/pi-durable";
@@ -15,7 +7,6 @@ import type { IntegrationSummary } from "../src/server/integration-status.ts";
 import { type CommandTarget, runCommand } from "../src/server/main.ts";
 import { roleLine, statusLine } from "../src/server/status.ts";
 
-/** Two roles, one model each, so a line that mixed them up would read wrong. */
 const ROLES: RoleMap = {
 	main: { provider: "opencode-go", modelId: "glm-5.3-flash", thinking: "high" },
 	subagent: { provider: "opencode-go", modelId: "deepseek-v4.1-flash", thinking: "max" },
@@ -32,7 +23,6 @@ interface Ran {
 	status: number;
 }
 
-/** A target that records what it was asked to do, in order, and a claim that answers the same thing every time. */
 function stub(options: { readonly claimed?: boolean; readonly status?: string; readonly busy?: boolean } = {}): {
 	readonly target: CommandTarget;
 	readonly ran: Ran;
@@ -97,9 +87,6 @@ describe("a command, dispatched", () => {
 	});
 
 	it("aborts stop before it claims, and claims the other two before they act, because that is the trade", async () => {
-		// The property is order, not counts, so the steps are what is asserted. `abort` is idempotent and a failed abort
-		// must not leave a permanent "stopped" behind; a repeated clear or compact is worse than a lost one, so those two
-		// claim first. Tidying this into one rule breaks one of the three whichever rule a reader picks.
 		const stop = stub();
 		await runCommand(stop.target, "command:telegram:stop-9", "stop", undefined);
 		assert.deepEqual(stop.steps, ["abort", "claim"]);
@@ -114,17 +101,12 @@ describe("a command, dispatched", () => {
 	});
 
 	it("aborts a redelivered stop again, because the claim is not a gate", async () => {
-		// Nothing is gated on the claim: the abort is idempotent, so a redelivery that reached it did no harm, and the log
-		// already holds the id that says so. Only the reply is suppressed: the first delivery already answered the chat.
 		const again = stub({ claimed: false });
 		assert.equal(await runCommand(again.target, "command:telegram:stop-1", "stop", undefined), undefined);
 		assert.deepEqual(again.steps, ["abort", "claim"]);
 	});
 
 	it("answers a redelivery with nothing, because the first delivery already answered", async () => {
-		// The log holds the claim, so the second delivery must not clear or compact again — and must not tell the chat that it
-		// did. An empty reply is no reply: the relay suppresses it, so the person sees one answer for one command, and the
-		// audit line says `already ran` rather than claiming an act that did not happen.
 		const again = stub({ claimed: false });
 		assert.equal(
 			await runCommand(again.target, "command:telegram:compact-1", "compact", "the pricing thread"),
@@ -135,8 +117,6 @@ describe("a command, dispatched", () => {
 	});
 
 	it("says a clear is queued behind the turn instead of claiming it is done", async () => {
-		// A reset is not display-only, so on a busy conversation it queues in the inbox and returns at once. A person told
-		// "cleared" there watches the answer they cleared arrive next.
 		const busy = stub({ busy: true });
 		assert.equal(
 			await runCommand(busy.target, "command:telegram:clear-2", "clear", undefined),
@@ -219,10 +199,6 @@ describe("the status line a chat reads", () => {
 	});
 
 	it("names only what is switched on and answered, and counts the errors it was told about", () => {
-		// This sentence is arithmetic over the list it is handed, and it owns exactly two rules: a name appears when the
-		// integration is enabled *and* connected, and the count is every error the boot recorded. A switched-off entry is
-		// never counted because the boot never reaches one and so never records an error for it (`mcp.ts`) — that guarantee
-		// is the connection's, which is why it is not claimed here, where it could not fail.
 		assert.equal(
 			statusLine(
 				view({}),

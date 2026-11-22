@@ -1,10 +1,3 @@
-/**
- * The prompt is rendered on the host and names the paths the tools see.
- *
- * A device keeps memory at `/home/<bot>/agent`, and the checkout carries it there. No translation table sits between the
- * host's path and the device's: the house is configured with both homes, and a section reads the device's. This file is
- * its own process because `configureHouse` is process-wide, and a test that set a device must not outlive itself.
- */
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

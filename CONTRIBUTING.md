@@ -25,18 +25,19 @@ npm run lint
 npm run typecheck
 ```
 
-Before opening a pull request, also run the generated-document and package checks when relevant:
+Before a pull request, run the generated-document and package checks when relevant:
 
 ```sh
 npm run gen:surface:check
 npm run check:docs
 npm run check:code
+npm run check:comments
 npm run check:metadata
 npm run prove:client
 npm run prove:package
 ```
 
-CI runs the full validation set on pull requests. The corresponding commands and repository structure are described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+CI runs every check on pull requests. The commands and structure are described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Making a change
 

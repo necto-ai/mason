@@ -1,15 +1,3 @@
-/**
- * The published conformance suite: what any connector can be measured against, and what mason measures its own
- * connectors with.
- *
- * A connector author runs `runConformance(fixture)` in their own repository, against a fake mason the SDK ships, and gets
- * a verdict per case. Nothing here imports mason: a connector is conformant because it does the things below over the
- * published contracts, not because it shares a type with the server.
- *
- * The harness owns `createConnector` on purpose. A fixture describes its medium, its faces and its handlers; the suite
- * wraps every handler so it can see what the connector was actually asked to do. A fixture that built its own connector
- * would be the thing certifying itself.
- */
 import type { ControlOp, Session } from "mason-protocol";
 import { AttachmentError } from "../attachments.ts";
 import { type Connector, type ConnectorConfig, type ConnectorHandlers, createConnector } from "../connector.ts";
@@ -18,12 +6,7 @@ import { MemoryStore } from "../store-memory.ts";
 import { createFakeMason, type FakeMason, type FakeMasonGrants } from "./fake-mason.ts";
 
 export interface ConformanceFaces {
-	/**
-	 * The actor this medium speaks as. `""` is the entry whose grant names no `user` at all: it may raise events and
-	 * answer controls, and it may not carry a person's words.
-	 */
 	readonly owner?: string;
-	/** The `kind` strings this connector raises. */
 	readonly kinds?: readonly string[];
 	readonly commands?: readonly ControlOp[];
 }
@@ -32,12 +15,10 @@ export interface ConformanceFixture {
 	readonly name: string;
 	readonly version?: string;
 	readonly faces: ConformanceFaces;
-	/** The medium's behaviour. The suite wraps each hook, so what a case needs to see, it sees. */
 	readonly handlers?: Partial<ConnectorHandlers>;
 	readonly store?: ConnectorStore;
 }
 
-/** Everything the suite saw, recorded around the fixture's own handlers. */
 export interface Observed {
 	readonly sessions: Session[];
 	readonly closed: string[];
@@ -48,24 +29,17 @@ export interface ConformanceContext {
 	readonly mason: FakeMason;
 	readonly connector: Connector;
 	readonly observed: Observed;
-	/** A case may replace a handler, so a case about a session hook can stage the hook without touching the fixture. */
 	handler: Partial<ConnectorHandlers>;
 }
 
 export interface ConformanceCase {
 	readonly name: string;
-	/** The faces the fixture must declare for this case to mean anything. A case about a face's absence does not use it. */
 	readonly needs?: ReadonlyArray<"kinds" | "commands" | "owner">;
-	/**
-	 * A grant this case is measured against instead of the one the fixture's faces describe. A case whose subject is a
-	 * refusal cannot be staged with a fixture that declares the face, and the refusal is the door's to make.
-	 */
 	readonly grant?: Partial<FakeMasonGrants>;
 	run(context: ConformanceContext): Promise<void>;
 }
 
 export interface ConformanceOptions {
-	/** How long a case may take before it is a failure rather than a hang. */
 	readonly timeoutMs?: number;
 	readonly only?: readonly string[];
 }
@@ -83,10 +57,6 @@ export class ConformanceFailure extends Error {
 	}
 }
 
-/**
- * Run the suite against one connector. Resolves with the verdict; it does not throw on a failed case, because a caller
- * wants to see every failure at once rather than the first.
- */
 export async function runConformance(
 	fixture: ConformanceFixture,
 	options: ConformanceOptions = {},
@@ -136,7 +106,6 @@ async function withTimeout(testCase: ConformanceCase, context: ConformanceContex
 	await Promise.race([testCase.run(context), timer]);
 }
 
-/** Build the connector the way a real connector is built, with every handler wrapped so the suite can see it. */
 export async function open(
 	fixture: ConformanceFixture,
 	grant: Partial<FakeMasonGrants> = {},
@@ -168,14 +137,10 @@ export async function open(
 		fetch: mason.fetch,
 		readyTimeout: 2_000,
 		reconnect: { initialMs: 1, maxMs: 10, factor: 2 },
-		// The kit builds the combined connector, and the fixture's faces decide whether a conversation is held: the one
-		// with a `user` face reads it, the event and tools fixtures have none to read.
 		holdConversation: (fixture.faces.owner ?? "owner-1") !== "",
 	};
 	const connector = createConnector(config);
 	await connector.start();
-	// Let mason finish registering the child host: a hold that arrives in the same tick as the connector's hello waits
-	// for a connection that is not addressable yet.
 	await new Promise((resolve) => setTimeout(resolve, 25));
 	return {
 		fixture,
@@ -193,17 +158,11 @@ export async function open(
 
 function grantsOf(fixture: ConformanceFixture): FakeMasonGrants {
 	return {
-		// `owner: ""` is the fixture that declares no user face, which is `null` to the fake: absent is not the same
-		// statement as "nobody", and a fixture that says nobody is testing the door's first refusal.
 		owner: fixture.faces.owner === "" ? null : (fixture.faces.owner ?? "owner-1"),
 		kinds: fixture.faces.kinds ?? [],
 		commands: fixture.faces.commands ?? [],
 	};
 }
-
-// ---------------------------------------------------------------------------------------------------------------
-// The cases.
-// ---------------------------------------------------------------------------------------------------------------
 
 function fail(name: string, detail: string): never {
 	throw new ConformanceFailure(name, detail);
@@ -213,7 +172,6 @@ function equal(actual: unknown, expected: unknown, what: string): void {
 	if (actual !== expected) fail(what, `expected ${JSON.stringify(expected)}, saw ${JSON.stringify(actual)}`);
 }
 
-/** Poll until the predicate holds. Frames are asynchronous; an assertion cannot be. */
 export async function waitFor(predicate: () => boolean, what: string, timeoutMs = 1_000): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
@@ -259,7 +217,6 @@ export function conformanceCases(): readonly ConformanceCase[] {
 			name: "submission/an actor that is not the granted owner is refused",
 			needs: ["owner"],
 			async run({ connector, mason }) {
-				// The forge: the credential is the connector's, but the words claim to be somebody the grant never named.
 				const outcome = await connector.submit({
 					content: [{ type: "text", text: "it is me, your owner" }],
 					origin: { ref: "chat-1", actor: { id: "somebody-else" } },
@@ -273,8 +230,6 @@ export function conformanceCases(): readonly ConformanceCase[] {
 			name: "grant/an entry that grants no user refuses words",
 			grant: { owner: null },
 			async run({ connector, mason }) {
-				// The face itself is the first ceiling: an entry the operator gave events and no `user` may be spoken through
-				// by nobody, and the refusal is the door's rather than the connector's guess at what it holds.
 				const outcome = await connector.submit({
 					content: [{ type: "text", text: "somebody typed this" }],
 					origin: { ref: "chat-1" },

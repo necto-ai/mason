@@ -1,26 +1,3 @@
-/**
- * `scripts/e2e-mason.ts` — a real mason, for an external connector to prove itself against.
- *
- * This is not a test and not a server for an operator: it is the half of an end-to-end run that has to know mason's
- * inside. A connector lives in its own repository and may not import anything here, so the only way it can be driven
- * against a real socket, a real MCP connection and a real durable transcript is a process that mason starts, and this is
- * that process.
- *
- * It knows **nothing about any vendor**. The integrations are a file the caller hands it, the model is a script of
- * assistant messages handed to the faux provider, and the only output is one line of JSON on stdout: where the server
- * is, and the credential each connector entry was issued. Everything a medium does — a fake Telegram, a fake Slack — is
- * the connector's own business, on the other side of that socket.
- *
- *     node --experimental-strip-types scripts/e2e-mason.ts \
- *       --config /tmp/run/integrations.json --script /tmp/run/turns.json [--home /tmp/run/house]
- *
- * The script is a JSON array; each element is one assistant message:
- *
- *     [{"text": "working on it"}, {"text": "done"}]
- *
- * The process stays up until it is killed. `SIGTERM` closes the server and the runtime and exits 0, which is how the
- * caller's teardown ends a run.
- */
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -40,7 +17,6 @@ import { currentIntegrations } from "../src/server/integrations.ts";
 import { startServer } from "../src/server/main.ts";
 import type { ResolvedModel } from "../src/server/runtime.ts";
 
-/** One assistant message: words, or a tool call. Anything else is a script the provider cannot play. */
 type Turn = { readonly text: string } | { readonly tool: string; readonly args: JsonObject };
 
 function argument(name: string): string | undefined {
@@ -55,7 +31,6 @@ if (configPath === undefined || scriptPath === undefined) {
 	process.exit(1);
 }
 
-/** The faux provider, scripted: one assistant message per element, in order, for the whole process. */
 function scriptedModel(turns: readonly Turn[]): ResolvedModel {
 	const faux = fauxProvider();
 	const models = createModels();
@@ -73,8 +48,6 @@ const house = argument("--home") ?? (await mkdtemp(join(tmpdir(), "mason-e2e-"))
 const paths = housePaths(house);
 await mkdir(paths.serviceDir, { recursive: true, mode: 0o700 });
 await mkdir(paths.agentDir, { recursive: true, mode: 0o700 });
-// Beside the home, never inside it: an entry at the home's root is what a pre-split home looks like, and the boot refuses
-// one rather than writing the new layout over it.
 const runDir = join(house, "..");
 
 const integrations = JSON.parse(await readFile(configPath, "utf8")) as {
@@ -105,15 +78,11 @@ for (const [name, entry] of Object.entries(integrations.integrations)) {
 	credentials[name] = (await mintConnectorCredential(paths.home, name)).credential;
 }
 
-// One marked line: the server logs to stdout on its own, so a bare JSON line would be read as the second line of a
-// sentence. The marker is what makes the caller's parse exact rather than hopeful.
 console.log(
 	`##E2E##${JSON.stringify({
 		base: `http://127.0.0.1:${server.port}`,
 		url: `ws://127.0.0.1:${server.port}/api/connector`,
 		home: paths.home,
-		// How the MCP server's connection looks from mason's side. There is no HTTP route for it any more: the panel that
-		// read one is gone, and this line is the caller's answer instead.
 		integrations: integrationSummaries(currentIntegrations()),
 		credentials,
 	})}`,

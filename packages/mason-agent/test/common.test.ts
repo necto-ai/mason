@@ -1,14 +1,3 @@
-/**
- * `src/server/common.ts` — the store every bot under a root shares.
- *
- * Three files, three disciplines, and each one is tested by the failure it exists to prevent: settings keep every key
- * mason does not know and never replace a file nobody could read; auth is strict about shape and survives two writers at
- * once, because a whole-file rewrite that lost a key somebody just stored is the one write that cannot be retried; and
- * every file refuses a version this build does not read, because a store shaped by a later release is a guess.
- *
- * Every write also leaves the file it replaced beside it, with a timestamp: a write that fails has to leave the
- * configuration it found. Nothing here reads pi's stores.
- */
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -212,7 +201,6 @@ describe("which model a bot runs", () => {
 			source: "roles",
 		});
 
-		// The bot's own file is the more specific decision, and it still answers with the key the root stores.
 		await writeRaw(
 			join(home, "service", "settings.json"),
 			JSON.stringify({ defaultProvider: "bot-p", defaultModel: "bot-m" }),

@@ -1,13 +1,3 @@
-/**
- * `docs/SURFACE.md` is rendered from the code, and a route the code serves but this file does not classify is a failure.
- *
- * There are four doors, and the rule that matters is AGENTS.md rule 6: a new entry point is unauthenticated until it
- * says how it is authenticated. So the check is a pair — the routes this file claims, and every pathname a server
- * compares against — and a literal in `main.ts` that no claim names stops the build, which is the moment a door was
- * added without anyone deciding who may open it.
- *
- * `npm run gen:surface` writes the file; `npm run gen:surface:check` fails when the committed copy is stale.
- */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,7 +21,6 @@ import { BASE_EXTENSIONS, MCP_EXTENSION_NAME, PER_BOOT_EXTENSIONS } from "../src
 export const SURFACE_PATH = "docs/SURFACE.md";
 export const SERVER_SOURCE = "src/server/main.ts";
 
-/** Every door, how it is opened, and why. A route in the code and not in this list is a route nobody decided about. */
 export interface Door {
 	readonly path: string;
 	readonly kind: "public" | "connector";
@@ -53,7 +42,6 @@ export const DOORS: readonly Door[] = [
 	},
 ];
 
-/** The pathname literals a server compares against, as a person reading the file counts them. */
 export function literalsIn(source: string): string[] {
 	const found = new Set<string>();
 	for (const match of source.matchAll(/url\.pathname\s*(?:===|!==|startsWith)\s*"([^"]+)"/g)) {
@@ -62,7 +50,6 @@ export function literalsIn(source: string): string[] {
 	return [...found].sort();
 }
 
-/** The literals no door claims. Empty is the only passing answer. */
 export function unclaimed(source: string, doors: readonly Door[] = DOORS): string[] {
 	const claimed = new Set(doors.map((door) => door.path));
 	return literalsIn(source).filter((path) => !claimed.has(path));
@@ -114,8 +101,6 @@ Budgets: ${budgets}.
 }
 
 function main(): void {
-	// The source and the document are on two sides of the package boundary: the server is this package's, the rendered
-	// catalog is the repository's.
 	const root = fileURLToPath(new URL("..", import.meta.url));
 	const repository = fileURLToPath(new URL("../../..", import.meta.url));
 	const target = join(repository, SURFACE_PATH);
@@ -127,8 +112,6 @@ function main(): void {
 		return;
 	}
 	const rendered = renderSurface();
-	// Every per-boot name the boot installs is in the document. A render that dropped one would still be a valid string
-	// and a stale document nobody could tell from a correct one, so the render is checked against the list it names.
 	const missing = [...PER_BOOT_EXTENSIONS, MCP_EXTENSION_NAME].filter(
 		(name) => !rendered.includes(name === MCP_EXTENSION_NAME ? `\`${name}\`` : name),
 	);

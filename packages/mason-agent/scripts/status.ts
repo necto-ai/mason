@@ -1,12 +1,3 @@
-/**
- * `mason status` — one line: which bot, which model, how much is configured, and whether mason is up.
- *
- * The quick half of the doctor, for the moment between "I changed something" and "did it take". It reads the same files
- * and asks the same port, and it writes nothing: a status that changed state would be a status nobody runs twice.
- *
- * The model line follows the same precedence as the boot (`common.ts`), so the line cannot disagree with what a turn
- * would actually run. It never prints a key, because a status line ends up in a paste.
- */
 import { readPiSettingsModel, resolveModelChoice } from "../src/server/common.ts";
 import { housePaths } from "../src/server/house.ts";
 import { type Integration, readIntegrations } from "../src/server/integrations.ts";
@@ -26,9 +17,6 @@ export async function runStatus(argv: readonly string[]): Promise<number> {
 			console.log(usage());
 			return 0;
 		}
-		// The same resolution `mason up`, `mason doctor` and `mason chat` use: `MASON_HOME` names one home directly, else
-		// the targeted bot under the root. Reading the root here made status the one verb that described a different home
-		// than the one being served.
 		const house = housePaths();
 		const name = house.root?.bot ?? house.home.split("/").at(-1) ?? house.home;
 		const choice = await resolveModelChoice(house);
@@ -41,8 +29,6 @@ export async function runStatus(argv: readonly string[]): Promise<number> {
 						? "none"
 						: `${fallback.provider}/${fallback.modelId} (pi's settings.json)`
 					: `${choice.provider}/${choice.modelId}`;
-		// A file the boot would refuse is not an empty file: saying "0 integrations" for it hides the reason `mason up`
-		// will not start.
 		const integrations: Record<string, Integration | undefined> = (await readIntegrations(house)).integrations;
 		const names = Object.keys(integrations);
 		const connectors = names.filter((name) => integrations[name]?.connector !== undefined).length;

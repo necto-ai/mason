@@ -1,8 +1,3 @@
-/**
- * Least privilege: what a caller may spend, what a tool can see, and what the state is readable by.
- *
- * The door (§4.1b) answers *who may speak*; these are the three bounds that hold after it has.
- */
 import assert from "node:assert/strict";
 import { chmod, mkdtemp, rm, stat } from "node:fs/promises";
 import type { IncomingMessage } from "node:http";
@@ -38,7 +33,6 @@ function mode(path: string): Promise<number> {
 	return stat(path).then((info) => info.mode & 0o777);
 }
 
-/** An `IncomingMessage`-shaped stream: what `readBodyCapped` needs is its async iterator and its headers. */
 function requestOf(chunks: string[], headers: Record<string, string> = {}): IncomingMessage {
 	const stream = Readable.from(chunks.map((chunk) => Buffer.from(chunk))) as unknown as IncomingMessage;
 	(stream as unknown as { headers: Record<string, string> }).headers = headers;
@@ -52,7 +46,6 @@ describe("the fire limit", () => {
 		assert.equal(limiter.take("hook"), undefined);
 		assert.equal(limiter.take("hook"), undefined);
 		assert.equal(limiter.take("hook"), undefined);
-		// The fourth fire in the window is refused, and the wait is the time until the first one ages out.
 		assert.equal(limiter.take("hook"), 60);
 		now += 30_000;
 		assert.equal(limiter.take("hook"), 30);
@@ -70,7 +63,6 @@ describe("the fire limit", () => {
 	it("keeps its map bounded: hook ids come from the URL, so they are not a place to grow memory", () => {
 		const limiter = createFireLimiter({ limit: 10, windowMs: 60_000, now: () => 0 });
 		for (let index = 0; index < 5_000; index += 1) limiter.take(`invented-${index}`);
-		// Nothing to assert but the absence of a crash and of a refusal for a name that was only just used.
 		assert.equal(limiter.take("invented-4999"), undefined);
 	});
 
@@ -92,7 +84,6 @@ describe("the body cap", () => {
 	});
 
 	it("refuses a body over the cap that arrives in pieces and declares nothing", async () => {
-		// A chunked upload has no `content-length` to check, so the running total is the check that counts.
 		const pieces = Array.from({ length: 4 }, () => "x".repeat(10_000));
 		assert.equal(await readBodyCapped(requestOf(pieces)), undefined);
 	});
@@ -112,13 +103,11 @@ describe("what a tool can see", () => {
 			HOME: "/home/someone",
 			LANG: "en_US.UTF-8",
 			TMPDIR: "/tmp/x",
-			// Everything else in a server's environment: a provider key, a database URL, a switch of ours.
 			OPENAI_API_KEY: "sk-do-not-leak",
 			DATABASE_URL: "postgres://user:pass@host/db",
 			MASON_HOME: "/home/someone/.mason",
 			PI_ENV_SSH_HOST: "somewhere",
 		});
-		// Only what the allowlist names, and only the names that were set: an empty `SHELL` is not a shell.
 		assert.deepEqual(Object.keys(env).sort(), ["HOME", "LANG", "PATH", "TMPDIR"]);
 		assert.ok(Object.keys(env).every((name) => (DAEMON_ENV_ALLOWED as readonly string[]).includes(name)));
 		assert.equal(env.PATH, "/usr/bin:/bin");
@@ -144,7 +133,6 @@ describe("what a tool can see", () => {
 describe("the agent's state", () => {
 	it("lives in the home, not in the directory the server was started from", async () => {
 		const directory = await tempDir("pda-state-");
-		// A `.data` beside the code is the old default: it must not be where a fresh home puts its transcript.
 		const houseHome = join(directory, "house");
 		const runtime = await openAgentRuntime(BACKGROUND_CONTEXT, {
 			houseHome,
@@ -165,7 +153,6 @@ describe("the agent's state", () => {
 	it("tightens a home that was created before the rule, and writes the soul private", async () => {
 		const directory = await tempDir("pda-modes-");
 		const paths = housePaths(join(directory, "house"));
-		// The shape of an older install: the home and its subdirectories readable by everyone.
 		await ensureHouse(paths, "soul");
 		await chmod(paths.home, 0o755);
 		await chmod(paths.logDir, 0o755);

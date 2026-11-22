@@ -1,31 +1,13 @@
-/**
- * `npm run check:code` — the line ceiling of every area of code, measured against the files it names.
- *
- * The same pressure the documents have, one layer down. A feature arrives, nobody removes the code it replaced, and the
- * area drifts into a history of itself; a ceiling is the smallest thing that notices. `docs/code-budgets.json` holds one
- * number per area, the number is today's size rounded up, and it only ever goes down: lowering one after a cut is the
- * point, raising one is a decision the pull request has to argue for.
- *
- * Three failures, and each names the area: code over its ceiling, an area in the manifest whose directory is gone, and
- * an area the manifest does not cover. The third matters as much as the others — a new `src/something/` that no ceiling
- * covers is code nobody is measuring while the table still says the code is measured.
- *
- * What counts is a line of code: not blank, not a comment, not a shebang, and never a test. Tests are the one place a
- * ceiling would be a reason not to write the test that proves a thing.
- */
 import type { Dirent } from "node:fs";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** The repository root: the manifest lives there and the areas are its paths. */
 const root = fileURLToPath(new URL("../../..", import.meta.url));
 
-/** Where the ceilings live, relative to the repository root. */
 export const MANIFEST_PATH = "docs/code-budgets.json";
 
 export interface Manifest {
-	/** A path relative to the repository root, and the most lines of code it may hold. */
 	readonly ceilings: Readonly<Record<string, number>>;
 }
 
@@ -33,20 +15,16 @@ export interface Row {
 	readonly area: string;
 	readonly lines: number;
 	readonly ceiling: number;
-	/** Lines still allowed. Negative when the area is over, which is the failure. */
 	readonly headroom: number;
 }
 
-/** Directories that are build output or dependencies, never source. */
 const SKIP = new Set([".git", "node_modules", "dist", "coverage", ".scratch", ".data"]);
 
-/** The files worth counting: TypeScript and JavaScript, never a test. */
 function counted(name: string): boolean {
 	if (!/\.(ts|tsx|mjs|js)$/.test(name)) return false;
 	return !/\.test\.[tj]sx?$/.test(name);
 }
 
-/** The lines of code in one file: comments and blank lines are prose, not maintenance. */
 export function countCode(text: string): number {
 	let lines = 0;
 	for (const line of text.split("\n")) {
@@ -59,7 +37,6 @@ export function countCode(text: string): number {
 	return lines;
 }
 
-/** Every counted file under one area, as paths relative to `base`. */
 export function filesIn(base: string, area: string): string[] {
 	const found: string[] = [];
 	const walk = (relativePath: string): void => {
@@ -84,23 +61,16 @@ export function filesIn(base: string, area: string): string[] {
 	return found.sort();
 }
 
-/** The lines of code in one area, summed over its files. */
 export function countArea(base: string, area: string): number {
 	let lines = 0;
 	for (const file of filesIn(base, area)) {
 		try {
 			lines += countCode(readFileSync(join(base, file), "utf8"));
-		} catch {
-			// A file that cannot be read is not a line of code; the audit reports the shape, not the permission.
-		}
+		} catch {}
 	}
 	return lines;
 }
 
-/**
- * The areas the manifest must cover, found by walking rather than by listing: every package's `src`, the tooling
- * directories that belong to a package, and the repository's own checks.
- */
 export function governedAreas(base: string): string[] {
 	const areas: string[] = [];
 	const children = (path: string): Dirent[] => {
@@ -126,7 +96,6 @@ export function governedAreas(base: string): string[] {
 	return areas.sort();
 }
 
-/** The manifest, validated: a ceiling that is not a positive integer is a typo that would fail every area at once. */
 export function readManifest(text: string, from = MANIFEST_PATH): Manifest {
 	let parsed: unknown;
 	try {
@@ -155,7 +124,6 @@ export interface Audit {
 	readonly unlisted: readonly string[];
 }
 
-/** The audit itself, against a directory: what a test points at a temporary tree, and the command at this repository. */
 export function audit(manifest: Manifest, base: string): Audit {
 	const rows: Row[] = [];
 	const over: string[] = [];
@@ -193,7 +161,6 @@ function table(rows: readonly Row[]): string {
 }
 
 function main(): never {
-	// `--root` exists for a script that wants the same audit over another tree; the command itself uses this one.
 	const rootAt = process.argv.indexOf("--root");
 	const base = rootAt === -1 ? root : resolve(process.argv[rootAt + 1] ?? root);
 	const check = process.argv.slice(2).includes("--check");

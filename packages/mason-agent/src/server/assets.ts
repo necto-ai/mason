@@ -1,19 +1,3 @@
-/**
- * The outbox: a turn's files, resolved after the run that wrote them.
- *
- * A turn produces a file by writing it under `out/` in its workspace and linking it in the message. After the run, this
- * module reads the answer's links, stores the bytes and maps each link to `asset:<id>`. Nothing is scanned for: a file
- * in `out/` that the message never names is not delivered, because a message is what says a file is for the reader.
- *
- * The rules are deliberately narrow. A link is a relative markdown target under `out/` — `file:` in front of it is the
- * older spelling and is stripped — and everything else a model can type stays text: a web page, an anchor, an absolute
- * path, `agent/profile.md`. A path is resolved through `canonicalPath` and must stay under `out/`, a symlink is refused
- * rather than followed, and the per-turn caps are checked before a byte is stored.
- *
- * The result is one `app.asset` entry per answered run, naming the row it decorates and only content ids. The projection
- * merges it into the row; nothing here writes a row of its own, and nothing here names a path on the wire.
- */
-
 import { basename, join } from "node:path";
 import type { Context, JsonValue } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -31,20 +15,12 @@ import { foldTranscript } from "./projection.ts";
 import type { AgentRuntime } from "./runtime.ts";
 import { liveOf } from "./status.ts";
 
-/** The output directory, relative to the workspace the tools run in. */
 export const OUTBOX = "out";
 
-/**
- * The workspace's own name, which a link may carry: the tools' cwd is the home above it (`runtime.ts`), so a message
- * written from there spells `workspace/out/name.ext`, and one written from inside the workspace spells `out/name.ext`.
- * Both name the same directory, and the workspace is what the resolver joins them against.
- */
 export const WORKSPACE = "workspace";
 
-/** The two spellings a link may use for the outbox, each with its trailing slash. */
 const OUTBOX_TARGETS: readonly string[] = [`${OUTBOX}/`, `${WORKSPACE}/${OUTBOX}/`];
 
-/** What one turn may attach. A test narrows these; a deployment runs the defaults. */
 export interface TurnAssetLimits {
 	readonly maxAssets: number;
 	readonly maxBytes: number;
@@ -60,12 +36,10 @@ const DEFAULT_LIMITS: TurnAssetLimits = {
 const REFUSED_NOTICE = "A file in this message could not be attached.";
 const CAPPED_NOTICE = "Some files in this message were not attached: the turn produced more than it may carry.";
 
-/** What the projection reads out of an `app.asset` entry. JSON only: no path, no bytes, no base64. */
 export interface AssetEntryData {
 	readonly rowId: string;
 	readonly entryId: string;
 	readonly assets: AssetRef[];
-	/** The target as the message wrote it (without a `file:` prefix), to the `asset:<id>` that replaced it. */
 	readonly links: Record<string, string>;
 	readonly notice?: string;
 }
@@ -73,29 +47,18 @@ export interface AssetEntryData {
 export interface TurnAssetsInput {
 	readonly env: ExecutionEnv;
 	readonly store: AttachmentStore;
-	/** The workspace the tools run in: `out/` is read below it. */
 	readonly workspaceDir: string;
-	/** The delivered row the assets belong to, as the projection spells it. */
 	readonly rowId: string;
-	/** The assistant entry the row was projected from, for idempotence. */
 	readonly entryId: string;
 	readonly text: string;
 	readonly limits?: Partial<TurnAssetLimits>;
 	readonly context?: Context;
 }
 
-/**
- * Resolve one answered run into an asset record, or `undefined` when it produced nothing to carry.
- *
- * `text` is the message the reader sees, which is where the links are. A file the message never links is not a
- * deliverable: the array is exactly the text's links, and a reader who was not told about a file was not given one.
- */
 export async function resolveTurnAssets(input: TurnAssetsInput): Promise<AssetEntryData | undefined> {
 	const context = input.context ?? BACKGROUND_CONTEXT;
 	const limits: TurnAssetLimits = { ...DEFAULT_LIMITS, ...input.limits };
 	const outDir = join(input.workspaceDir, OUTBOX);
-	// `out/` itself must be a plain directory. A symlinked `out/` resolves through it, so canonical containment would
-	// accept the whole tree it points at; a link is refused before its target is trusted.
 	const outEntry = await entryNamed(input.env, input.workspaceDir, OUTBOX, context);
 	const canonicalOut = outEntry?.kind === "directory" ? await canonical(input.env, outDir, context) : undefined;
 
@@ -147,7 +110,6 @@ export async function resolveTurnAssets(input: TurnAssetsInput): Promise<AssetEn
 	};
 }
 
-/** One file written by the turn, stored and answered as the ref a row carries. */
 async function storeOut(
 	options: {
 		readonly env: ExecutionEnv;
@@ -174,7 +136,6 @@ async function storeOut(
 	const reader = opened.value;
 	try {
 		const info = await reader.info(options.context);
-		// `info` is the opened file's, not whatever its path names now: a replacement between the two checks is not read.
 		if (!info.ok || info.value.kind !== "file") return { kind: "refused" };
 		if (info.value.size > options.limits.maxBytes) return { kind: "refused" };
 		if (
@@ -198,7 +159,6 @@ async function storeOut(
 	}
 }
 
-/** The bytes of an opened file, or `undefined` when it shrank under the reader. */
 async function readAll(
 	reader: {
 		read(
@@ -222,7 +182,6 @@ async function readAll(
 	return offset === size ? Buffer.concat(chunks) : undefined;
 }
 
-/** One entry of a directory by name, or `undefined` when the directory or the name is not there. */
 async function entryNamed(
 	env: ExecutionEnv,
 	directory: string,
@@ -234,26 +193,16 @@ async function entryNamed(
 	return listed.value.find((entry) => entry.name === name);
 }
 
-/** A path's real path, or `undefined` when it cannot be resolved. */
 async function canonical(env: ExecutionEnv, path: string, context: Context): Promise<string | undefined> {
 	const result = await env.canonicalPath(path, context);
 	return result.ok ? result.value : undefined;
 }
 
-/** One markdown link this reads: the target as written (without a `file:` prefix), and the path under `out/` it names. */
 interface OutboxLink {
 	readonly target: string;
-	/** `undefined` when the link named a delivery attempt this turn may not carry (`file:` outside `out/`). */
 	readonly relative?: string;
 }
 
-/**
- * Every markdown target that names a file under `out/`.
- *
- * `file:` in front of a target is the older spelling and is stripped, so a message written for the previous build still
- * resolves. A `file:` target outside `out/` is a delivery attempt and is refused, which is the notice the row carries;
- * a plain web link, an anchor or a path to the agent's own files is prose, and this does not read it.
- */
 function outboxLinks(text: string): OutboxLink[] {
 	const links: OutboxLink[] = [];
 	for (const match of text.matchAll(/\[[^\]\n]*\]\(([^)\s]+)\)/g)) {
@@ -262,23 +211,12 @@ function outboxLinks(text: string): OutboxLink[] {
 		const wasFile = written.startsWith("file:");
 		const target = wasFile ? written.slice("file:".length) : written;
 		const relative = outPathOf(target);
-		// A plain link is a delivery attempt only when it names the outbox, under either spelling; a `file:` target is one
-		// whatever it names, because that is what the older prompt taught. Everything else in a message is prose. A target
-		// that names the outbox and escapes it stays a delivery attempt with no path, so the row carries the refusal.
 		if (!wasFile && !OUTBOX_TARGETS.some((prefix) => target.startsWith(prefix))) continue;
 		links.push({ target, ...(relative === undefined ? {} : { relative }) });
 	}
 	return links;
 }
 
-/**
- * The path under `out/` a target names, or `undefined` when it is not one this turn may attach.
- *
- * Only a relative path is accepted, spelled `out/…` or `workspace/out/…`: the tools' cwd is the home above the workspace,
- * so a message written there names the workspace. An absolute path, a parent segment, a Windows drive and a control
- * character are refused before the filesystem sees them; the canonical check after this is what refuses a symlink that
- * stays inside `out/`.
- */
 function outPathOf(target: string): string | undefined {
 	const under = target.startsWith(`${WORKSPACE}/${OUTBOX}/`)
 		? target.slice(WORKSPACE.length + OUTBOX.length + 2)
@@ -296,7 +234,6 @@ function outPathOf(target: string): string | undefined {
 	return relative;
 }
 
-/** The type a file is served as, from its name: a small table rather than a dependency for the common deliverables. */
 const MIME: Readonly<Record<string, string>> = {
 	bin: "application/octet-stream",
 	csv: "text/csv",
@@ -322,13 +259,6 @@ function mimeOf(name: string): string {
 	return MIME[extension] ?? "application/octet-stream";
 }
 
-/**
- * Resolve the files of each run that ends, from the conversation watch.
- *
- * A run ends when its task id disappears or another replaces it, including the case where the next queued turn starts in
- * the same revision. The run's answer is the newest assistant entry between its first entry and the next run's, and the
- * row is found by folding the transcript up to it, so the id the asset entry names is the id the projection emits.
- */
 export interface RunAssets {
 	observe(view: ConversationView): void;
 	idle(): Promise<void>;
@@ -399,7 +329,6 @@ export function createRunAssets(options: {
 			seen.add(entryId);
 			return;
 		}
-		// The row the projection will emit for this entry: the same fold, cut off at the answer.
 		const truncated = {
 			...view,
 			entries: entries.filter((entry) => Number(entry.id) <= Number(answer.id)),
@@ -423,8 +352,6 @@ export function createRunAssets(options: {
 				...(options.limits === undefined ? {} : { limits: options.limits }),
 			});
 		} catch (error) {
-			// The resolver failed with a row already named: keep the message and tell the reader once, rather than
-			// leaving a `file:out/` link that leads nowhere and no reason why.
 			options.log?.(`[assets] ${error instanceof Error ? error.message : String(error)}`);
 			record = { rowId: row.id, entryId, assets: [], links: {}, notice: REFUSED_NOTICE };
 		}
@@ -451,7 +378,6 @@ export function createRunAssets(options: {
 	};
 }
 
-/** The text of an assistant entry: a plain string, or its text blocks joined. */
 function textOfEntry(entry: EntryRecord): string {
 	const message = Array.isArray(entry.model) ? entry.model[0] : undefined;
 	const content = (message as { content?: unknown } | undefined)?.content;

@@ -1,18 +1,3 @@
-/**
- * The connector runtime: one Chord host, one durable journal, and the acts a connector performs.
- *
- * Everything here is the part a connector author would otherwise get wrong:
- *
- * - **Durable identity, not retries with fresh ids.** `append` and `control` write the call into the store before it
- *   reaches the link, so a link that dies mid-flight is a resend of the same id after reconnect rather than a second
- *   logical operation. Mason deduplicates on that id forever; a connector must not invent a new one for the same act.
- * - **Reconnect is the recovery mechanism.** The host keeps one link to mason; a new link re-holds every reference, and
- *   the journal is replayed over it.
- * - **The conversation is where an answer is.** The SDK calls, and mason answers; the rows a person reads arrive as the
- *   `conversation` state member, so no vendor handler sits between mason and a reader. Holding it is the SDK's job
- *   because the rule for applying it is the protocol's: a snapshot replaces what is held, and a diff is kept only when
- *   its revision is later than the one held, which is what makes a reconnect safe.
- */
 import { createHost, type Host, type Link, type StateEvent } from "@earendil-works/chord";
 import { apply } from "@earendil-works/chord/delta";
 import {
@@ -38,53 +23,35 @@ export interface Logger {
 	error(message: string, fields?: Record<string, unknown>): void;
 }
 
-/** Discards everything. The default, because a library that logs to the console by default is a library that does. */
 export const silentLogger: Logger = { info() {}, warn() {}, error() {} };
 
 export interface ConnectorHandlers {
-	/** The conversation as the wire has it: the snapshot first, then the value each diff produced. */
 	onConversation?(state: ConversationState): Promise<void> | void;
-	/** The session is live and the journal has been replayed. Called once per connection. */
 	onSession?(session: Session): Promise<void> | void;
-	/** The link is gone and a reconnect is scheduled. */
 	onClosed?(reason: string): void;
 }
 
 export interface ConnectorConfig {
-	/** The connector's name as mason's operator configured it. Mason's credential speaks for it and nothing else. */
 	readonly name: string;
 	readonly version: string;
 	readonly url: string;
 	readonly credential: string;
 	readonly store: ConnectorStore;
 	readonly handlers?: ConnectorHandlers;
-	/** What this connector is for, and the events it can raise: the same manifest an MCP server declares. */
 	readonly integration?: IntegrationManifest;
 	readonly logger?: Logger;
 	readonly now?: () => number;
-	/** How a link to mason is opened. `nodeWebSocketLink(WebSocket)` is the Node one; a test supplies a pair. */
 	readonly link: LinkFactory;
 	readonly reconnect?: { readonly initialMs?: number; readonly maxMs?: number; readonly factor?: number };
-	/** How long `start` waits for mason to answer before it fails: the first connection only. Default 5 s. */
 	readonly firstConnectionMs?: number;
-	/** Base URL for the attachment endpoints when it differs from the socket's origin. */
 	readonly httpBase?: string;
-	/** Substitute the transfer endpoint: the conformance suite serves attachments from memory. */
 	readonly fetch?: Fetcher;
-	/** How long a call to mason may take before it is left journaled. Chord's own default is 60 s. */
 	readonly readyTimeout?: number;
-	/**
-	 * Whether this client holds the `conversation` state member. The two public factories decide it from the grant: a
-	 * user client reads the conversation, an event client has none. The conformance kit builds the combined connector and
-	 * passes the fixture's own answer.
-	 */
 	readonly holdConversation?: boolean;
 }
 
-/** How a Chord link is opened for one connection: `webSocketLink` in production, a pair of memory links in a test. */
 export type LinkFactory = (url: string, init: { readonly credential: string }) => Link;
 
-/** What came of trying to hand mason something, from the connector's side. */
 export type InboundOutcome =
 	| { readonly status: "accepted"; readonly id: string; readonly entryId?: string }
 	| { readonly status: "duplicate"; readonly id: string; readonly entryId?: string }
@@ -94,14 +61,12 @@ export type InboundOutcome =
 export interface ConnectorStatus {
 	readonly connected: boolean;
 	readonly session: Session | undefined;
-	/** The conversation as this connector last applied it: the state a medium renders. */
 	readonly conversation: ConversationState | undefined;
 	readonly connections: number;
 	readonly pending: number;
 	readonly lastError: string | undefined;
 }
 
-/** A person's words, on their way to mason. Durable: the act survives a restart and is resent until mason claims it. */
 export interface SubmissionInput {
 	readonly content: readonly ContentBlock[];
 	readonly origin?: {
@@ -114,7 +79,6 @@ export interface SubmissionInput {
 	readonly appendId?: string;
 }
 
-/** An unsolicited service event. Same durability, different act: it never becomes a person's conversation. */
 export interface EventInput {
 	readonly kind: string;
 	readonly payload?: unknown;
@@ -136,14 +100,11 @@ export interface Connector {
 	submit(input: SubmissionInput): Promise<InboundOutcome>;
 	event(input: EventInput): Promise<InboundOutcome>;
 	control(input: ControlInput): Promise<ControlResult>;
-	/** Replay the journal now, on a link that is already open. */
 	flush(): Promise<void>;
 	readonly attachments: AttachmentClient;
-	/** Force the link down, as a test or a supervisor would. The reconnect loop takes it from there. */
 	drop(reason?: string): void;
 }
 
-/** One journaled call: what to send, and the id it is deduplicated by on both sides. */
 interface Journaled {
 	readonly seq: number;
 	readonly id: string;
@@ -151,7 +112,6 @@ interface Journaled {
 	readonly args: Record<string, unknown>;
 }
 
-/** What a call came to, before the caller's own shape is put on it. */
 type Sent<T> =
 	| { readonly status: "ok"; readonly value: T }
 	| { readonly status: "pending" }
@@ -184,7 +144,6 @@ export function createConnector(config: ConnectorConfig): Connector {
 	};
 
 	let peer: PeerRef | undefined;
-	/** The link this connection runs on, so `drop` ends the link rather than the host it lives in. */
 	let currentLink: Link | undefined;
 	let session: Session | undefined;
 	let conversation: ConversationState | undefined;
@@ -195,7 +154,6 @@ export function createConnector(config: ConnectorConfig): Connector {
 	let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 	let flushTimer: ReturnType<typeof setTimeout> | undefined;
 	let flushing: Promise<void> | undefined;
-	/** Seeded from the store on first use, then monotonic in memory: a read-modify-write per call hands two calls one seq. */
 	let nextSeq: number | undefined;
 	let seeding: Promise<void> | undefined;
 	const inflight = new Map<string, Promise<Sent<unknown>>>();
@@ -227,8 +185,6 @@ export function createConnector(config: ConnectorConfig): Connector {
 	async function start(): Promise<Session> {
 		if (session !== undefined && peer !== undefined) return session;
 		stopping = false;
-		// The first connection is the only one with a deadline: it answers "is mason there", where a later drop has a
-		// session to come back to and a loop that is already retrying. A url nobody answers is a sentence, not a hang.
 		const wait = config.firstConnectionMs ?? 5_000;
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		const deadline = new Promise<never>((_, reject) => {
@@ -256,12 +212,6 @@ export function createConnector(config: ConnectorConfig): Connector {
 		await config.store.close();
 	}
 
-	/**
-	 * Force the link down, the way a supervisor or a test would.
-	 *
-	 * The link, not the host: a closed host is a host that never comes back, and the point of a drop is that the
-	 * reconnect loop handles it. The next connection opens a new link and accepts the new upstream.
-	 */
 	function drop(reason = "dropped"): void {
 		const link = currentLink;
 		if (link === undefined) return;
@@ -269,12 +219,6 @@ export function createConnector(config: ConnectorConfig): Connector {
 		link.close(reason);
 	}
 
-	/**
-	 * Open one link, and wait for the handshake to be readable.
-	 *
-	 * Chord's `get` waits for the snapshot, so the session is the handshake: the connector learns its control vocabulary,
-	 * the kinds it may raise and its budgets from the object's state, and there is no separate hello to answer.
-	 */
 	async function connect(): Promise<Session> {
 		const link = config.link(config.url, { credential: config.credential });
 		connections += 1;
@@ -288,14 +232,10 @@ export function createConnector(config: ConnectorConfig): Connector {
 				config.integration === undefined ? {} : { metadata: config.integration },
 			)) as unknown as PeerRef;
 		} catch (error) {
-			// The first connection says whether mason is there at all. A refusal here is the answer a command prints, not
-			// something to retry in the dark: a supervisor restarts a process, and a person reads a sentence.
 			lastError = describe(error);
 			link.close(lastError);
 			throw error;
 		}
-		// An event client has no transcript: it does not hold the member, so the provider streams none of it. Binding is
-		// directional, and a consumer that names no member is served none (PROTOCOL.md, "the ten rules").
 		if (config.holdConversation !== false) held.conversation.events((frame) => holdConversation(frame));
 		const state = held.session.value;
 		peer = held;
@@ -312,13 +252,6 @@ export function createConnector(config: ConnectorConfig): Connector {
 		return state;
 	}
 
-	/**
-	 * One frame of the conversation, applied by the rule the protocol states.
-	 *
-	 * A snapshot replaces what is held, whatever revision it carries; a diff is applied to a copy and kept only when its
-	 * revision is greater. Both halves are the protocol's, not a convenience: the counter restarts with mason, so a
-	 * snapshot at revision 1 after a reconnect is the frame that converges a client holding 42.
-	 */
 	function holdConversation(frame: StateEvent<ConversationState>): void {
 		const next =
 			frame.type === "ops"
@@ -421,7 +354,6 @@ export function createConnector(config: ConnectorConfig): Connector {
 		return outcome.value as ControlResult;
 	}
 
-	/** One durable call: journaled, sent if a link is open, retried on reconnect, and deduplicated in-process. */
 	function send(kind: Journaled["kind"], id: string, args: Record<string, unknown>): Promise<Sent<unknown>> {
 		const key = `${kind}:${id}`;
 		const running = inflight.get(key);
@@ -454,14 +386,11 @@ export function createConnector(config: ConnectorConfig): Connector {
 			return { status: "ok", value };
 		} catch (error) {
 			const code = errorCodeOf(error);
-			// A caller that could not have been heard is not a verdict: Chord says `unavailable` for a link that is going
-			// down, for a budget, and for a call the far end refused to run. All three are worth another try.
 			if (code === ERROR_CODE.internal || code === ERROR_CODE.rateLimited || code === ERROR_CODE.queueOverflow) {
 				scheduleFlush(reconnect.initialMs);
 				return { status: "pending" };
 			}
 			if (code === undefined) {
-				// No protocol code: the link, not mason, refused the call. Keep it journaled.
 				peer = undefined;
 				scheduleReconnect();
 				return { status: "pending" };
@@ -471,12 +400,6 @@ export function createConnector(config: ConnectorConfig): Connector {
 		}
 	}
 
-	/**
-	 * Read the highest sequence the store already holds, once, behind one promise.
-	 *
-	 * Two calls that arrive together both see an empty journal; seeding inside the same await is what keeps them from
-	 * both writing `seq: 1`, and the increment below is synchronous, so one of them takes the next number.
-	 */
 	async function seedSeq(): Promise<void> {
 		if (nextSeq !== undefined) return;
 		seeding ??= (async () => {
@@ -489,7 +412,6 @@ export function createConnector(config: ConnectorConfig): Connector {
 		await seeding;
 	}
 
-	/** Write the call down before it goes on the link. Undone only by a claim or a final refusal. */
 	async function journal(
 		kind: Journaled["kind"],
 		id: string,
@@ -508,7 +430,6 @@ export function createConnector(config: ConnectorConfig): Connector {
 		} satisfies Journaled);
 	}
 
-	/** Retry what was refused, after exactly one backoff step. */
 	function scheduleFlush(inMs: number): void {
 		if (flushTimer !== undefined || stopping) return;
 		const wait = Math.min(Math.max(inMs, 10), 60_000);
@@ -539,7 +460,6 @@ export function createConnector(config: ConnectorConfig): Connector {
 		for (const entry of ordered) {
 			const { kind, args, id } = entry.value;
 			if (stalled.has(kind)) continue;
-			// Through `send`, so a call already in flight from a direct call shares its promise instead of going twice.
 			const outcome = await send(kind, id, args);
 			if (outcome.status === "pending") {
 				stalled.add(kind);
@@ -554,7 +474,6 @@ export function createConnector(config: ConnectorConfig): Connector {
 	}
 }
 
-/** A stable id this connector mints for one act. Monotonic enough to sort, unique enough to deduplicate. */
 function mintId(prefix: string, now: () => number): string {
 	return `${prefix}-${now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }

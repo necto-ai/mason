@@ -1,15 +1,3 @@
-/**
- * `npm run dev:stack` — a local install shaped like the deployment, for testing the whole loop by hand.
- *
- * The deployment runs two machines: mason, and an `env` machine the tools actually run on, reached over SSH. This brings
- * both up on one box without a container runtime: a second, unprivileged `sshd` on loopback is a real SSH target, so the
- * code path is the deployment's (`sshConnection`, host-key pinning, the daemon uploaded and verified per start), and the
- * only thing missing is the container boundary itself.
- *
- * Nothing outside `.dev/` is written: the home, the keys, the sshd config, the known_hosts and the workspace all
- * live there, so tearing down is `rm -rf .dev` and no part of the developer's own `~/.mason` or `~/.ssh` is
- * touched. The state is deliberately disposable — this is a test bench, not an install.
- */
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -25,17 +13,12 @@ const option = (name: string, fallback: string): string => {
 };
 
 const port = option("--port", "8787");
-/** `--fake` plays the model offline: the whole path plus the screens, at no token cost. Real is the default. */
 const fake = flag("--fake");
-/** `--no-env-ssh` runs tools through the local daemon instead, for a machine where sshd is not available. */
 const localEnv = flag("--no-env-ssh");
 
 const sshDir = resolve(stateDir, "sshd");
 const sshPort = 2222;
-/** Aliased host key: the client pins this name, so a changed host key is a refusal rather than a new trust. */
 const hostKeyAlias = "[127.0.0.1]:2222";
-// One home per model mode: a conversation records the model it was created with, so a home that has seen the offline
-// model cannot go back to the real one — and switching between them is what a person testing this will do constantly.
 const home = resolve(stateDir, fake ? "home-fake" : "home");
 
 if (flag("--reset")) {
@@ -46,20 +29,12 @@ if (flag("--reset")) {
 await mkdir(stateDir, { recursive: true, mode: 0o700 });
 await mkdir(sshDir, { recursive: true, mode: 0o700 });
 await mkdir(home, { recursive: true, mode: 0o700 });
-// Both halves of the home, and the workspace beside the memory: without containers they are ordinary sibling
-// directories on one filesystem, and the split is a layout here rather than a boundary: `bash` can see `service/` in
-// the dev stack, so nothing about this run protects it for a developer.
 await mkdir(resolve(home, "workspace"), { recursive: true, mode: 0o700 });
 await mkdir(resolve(home, "service", "ssh"), { recursive: true, mode: 0o700 });
-// The sshd logs in as this developer, so the device home is a scratch directory under `.dev/` rather than
-// `/home/<bot>`: the checkout writes `agent/` and `workspace/` there, and nothing of the developer's own is touched.
 const deviceHome = resolve(stateDir, fake ? "device-fake" : "device");
 await mkdir(deviceHome, { recursive: true, mode: 0o700 });
-// A home carried over from a real install can arrive 0777 on some filesystems; tightening here is cheap.
 await chmod(home, 0o700).catch(() => {});
 
-// Two keypairs, both throwaway: one is the env machine's host identity, one is mason's key to reach it. Generating them
-// under `.data/dev` is what keeps the developer's own `~/.ssh` out of this.
 const hostKey = resolve(sshDir, "host_ed25519");
 const clientKey = resolve(sshDir, "id_ed25519");
 const authorized = resolve(sshDir, "authorized_keys");
@@ -79,13 +54,10 @@ await writeFile(
 		`HostKey ${hostKey}`,
 		`AuthorizedKeysFile ${authorized}`,
 		`PidFile ${resolve(sshDir, "sshd.pid")}`,
-		// The env machine is reached with a key and nothing else, and it authenticates as this one user: a second sshd
-		// cannot become anybody else, which is exactly the boundary this test bench needs.
 		"PasswordAuthentication no",
 		"KbdInteractiveAuthentication no",
 		"PermitRootLogin no",
 		"UsePAM no",
-		// Both directories are inside the repo and replaced on every reset, so ownership checks would only produce noise.
 		"StrictModes no",
 		"PrintMotd no",
 		"LogLevel VERBOSE",
@@ -100,7 +72,6 @@ async function stop(): Promise<void> {
 	if (stopping) return;
 	stopping = true;
 	for (const child of children) child.kill("SIGTERM");
-	// Give the server a moment to close its sockets, then stop asking.
 	await new Promise((done) => setTimeout(done, 300));
 	for (const child of children) if (child.exitCode === null) child.kill("SIGKILL");
 }
@@ -121,8 +92,6 @@ if (!localEnv) {
 		if (!stopping) console.error(`[dev] sshd exited (${code === null ? "signal" : code})`);
 	});
 
-	// Wait for the listener, then pin its key. Scanning is deliberate: the key is read from the machine we just started,
-	// and it is pinned before any request can use it.
 	const scanned = await waitForScan(sshPort);
 	await writeFile(knownHosts, scanned, { mode: 0o600 });
 	envUrl = `ssh://${process.env.USER ?? "agent"}@127.0.0.1:${sshPort}`;
@@ -193,7 +162,6 @@ function run(command: string, argv: string[]): Promise<string> {
 	});
 }
 
-/** `sshd` is not in every PATH: NixOS keeps it in the system profile, and a dev shell may not have it at all. */
 function findSshd(): string | undefined {
 	const candidates = [
 		...(process.env.PATH ?? "").split(delimiter).map((dir) => resolve(dir, "sshd")),

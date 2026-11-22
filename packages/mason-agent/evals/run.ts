@@ -1,9 +1,3 @@
-/**
- * `npm run eval` — run the behaviour scenarios against one model and print what held.
- *
- * Cheap on purpose: six scenarios, stub tools, one or two turns each. A full run against a flash model costs a
- * fraction of a cent; the local model costs nothing but time.
- */
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runScenario } from "./lib/runner.ts";

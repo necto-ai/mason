@@ -51,6 +51,9 @@ jobs:
       # The same ratchet for code (`docs/code-budgets.json`): one ceiling per area, and it only ever goes down. A cut
       # that shrinks an area is expected to lower its number in the same commit.
       - run: npm run check:code
+      # Code has no comments. A comment cannot fail, so nothing enforces it; the decision goes in an ADR, in
+      # `docs/ARCHITECTURE.md`, or in the message of the check that fails. A directive a tool reads stays.
+      - run: npm run check:comments
       # The manifests, the README, LICENSE and NOTICE are four places the terms are read from, and they were edited at
       # different times: NOTICE claimed Apache-2.0 for the published packages while everything else said AGPL-3.0.
       - run: npm run check:licence

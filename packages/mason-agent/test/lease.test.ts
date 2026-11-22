@@ -1,11 +1,3 @@
-/**
- * The per-checkout write lease: one writer, refused rather than queued, released at settlement.
- *
- * The unit is a checkout, not a home: two bots with two data directories can work on one tree, so the key is the
- * checkout's realpath and the file lives outside the tree it leases — a writer that reports `git status` must not find
- * the lease in its own output. Nothing here is reaped by age: a stale holder is one whose process is gone, and a child
- * that has been thinking for ten minutes is a child that is still writing.
- */
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
@@ -61,8 +53,6 @@ test("the key is the checkout's realpath, and the file is outside the checkout",
 });
 
 test("a lease left by a crash is refused, and the refusal names the file to remove", async () => {
-	// Nothing clears a stale lease: a read followed by an unlink lets a second writer take the lease in between and lose it
-	// to the unlink. So a crash costs a person one `rm`, and the sentence says which file.
 	const { checkout, dir } = await workspace("mason-lease-stale-");
 	await mkdir(dir, { recursive: true });
 	const path = await leasePath(dir, checkout);
@@ -80,7 +70,6 @@ test("a lease left by a crash is refused, and the refusal names the file to remo
 		"the person is told which file to remove",
 	);
 
-	// A live holder is refused with the same sentence and without the removal hint.
 	await writeFile(
 		path,
 		JSON.stringify({ token: "alive", pid: process.pid, host: hostname(), checkout, startedAt: long, writer: "live" }),
@@ -91,8 +80,6 @@ test("a lease left by a crash is refused, and the refusal names the file to remo
 });
 
 test("a lease this process cannot read is refused, not deleted", async () => {
-	// A permission bit or a descriptor limit says nothing about whether a writer holds the checkout. Treating an unreadable
-	// file as free is how a second writer is admitted while the first is still running.
 	const { dir, checkout } = await workspace("mason-lease-unreadable-");
 	await mkdir(dir, { recursive: true });
 	const path = await leasePath(dir, checkout);

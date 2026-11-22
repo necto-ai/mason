@@ -1,16 +1,3 @@
-/**
- * `src/server/atomic.ts` — the one writer of the service half's files.
- *
- * What is pinned is the promise a reader relies on: a file is replaced whole, or not at all, and nothing outside the owner
- * can read it. The concurrency case is the one that cost a real bug: two writes from one process to one path are two
- * renames of one temp name, and the target ends up holding the first document's bytes under the second one's length — a
- * file that parses nowhere. Both halves are checked here, because the ledger that found it
- * (`scripts/chat.ts`) is not the only writer.
- *
- * The cross-process half is the other one: two writers on one store are two processes, so they meet at the lock file, and
- * a release that removes the path rather than its own file hands the store to a third writer. That case needs a holder
- * past the staleness window, which is why it runs three processes and backdates a lock.
- */
 import assert from "node:assert/strict";
 import { type ChildProcess, spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, stat, utimes } from "node:fs/promises";
@@ -46,8 +33,6 @@ describe("writeFileAtomic", () => {
 	test("concurrent writes to one path leave one whole document, not two interleaved", async () => {
 		const directory = await temporaryDirectory();
 		const path = join(directory, "console-ledger.json");
-		// Two writes in one turn is the shape that broke: a journal entry and a settled key of one act.
-		// The winner is either document; a file that parses is the whole assertion.
 		await Promise.all([
 			writeFileAtomic(path, { a: "x".repeat(400) }),
 			writeFileAtomic(path, { b: "y".repeat(400) }),
@@ -77,7 +62,6 @@ describe("writeTextAtomic", () => {
 	});
 });
 
-/** One writer process: `test/support/lock-writer.ts`, which logs when it enters and leaves the lock. */
 function spawnWriter(path: string, name: string, holdMs: number, log: string): ChildProcess {
 	return spawn(
 		process.execPath,
@@ -86,7 +70,6 @@ function spawnWriter(path: string, name: string, holdMs: number, log: string): C
 	);
 }
 
-/** Wait until the writer log carries a line, so the test follows the processes rather than a sleep. */
 async function waitForLine(log: string, pattern: RegExp): Promise<void> {
 	for (let attempt = 0; attempt < 600; attempt += 1) {
 		const text = await readFile(log, "utf8").catch(() => "");
@@ -98,14 +81,12 @@ async function waitForLine(log: string, pattern: RegExp): Promise<void> {
 }
 
 function exited(child: ChildProcess): Promise<void> {
-	// A listener attached after the fact never fires, and the writer may already be gone by the time the test asks.
 	if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
 	return new Promise((done) => {
 		child.on("exit", () => done());
 	});
 }
 
-/** Every pair of writers that was inside the lock at the same moment, as the log recorded it. */
 function overlaps(text: string): string[] {
 	const spans = new Map<string, { enter: number; exit?: number }>();
 	for (const line of text.split("\n")) {
@@ -130,29 +111,19 @@ function overlaps(text: string): string[] {
 }
 
 describe("withStoreLock", () => {
-	/**
-	 * The lock is released with an unlink, and an unlink removes whatever is at that path, not necessarily the file this
-	 * caller created. A holder whose lock was reaped as stale therefore deletes its successor's lock when it finishes,
-	 * and a third writer then enters beside it. The window needs a holder that outlives the staleness window, which a
-	 * suspended machine or a slow filesystem produces.
-	 */
 	test("a release does not delete the lock its successor took", async () => {
 		const directory = await temporaryDirectory();
 		const path = join(directory, "store.json");
 		const log = join(directory, "writers.log");
 
-		// The first two overlap by design: a holder past the stale window is indistinguishable from one that died, and
-		// the successor is admitted. What is not by design is the third writer entering while the successor is inside.
 		const holder = spawnWriter(path, "holder", 3_000, log);
 		await waitForLine(log, /^enter holder /m);
-		// The holder is inside and will be for seconds; its lock now looks older than the stale window.
 		const old = new Date(Date.now() - 60_000);
 		await utimes(`${path}.lock`, old, old);
 
 		const successor = spawnWriter(path, "successor", 4_000, log);
 		await waitForLine(log, /^enter successor /m);
 
-		// The holder finishes here. Its release must leave the successor's lock where it is.
 		await exited(holder);
 		const third = spawnWriter(path, "third", 200, log);
 		await exited(third);

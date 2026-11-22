@@ -1,24 +1,3 @@
-/**
- * `scripts/e2e-first-run.ts` — the first run as a script: a real CLI, a real root, a real turn.
- *
- * Every other first-run test runs in-process, against functions. This one runs the *installed shape*: `bin/mason.ts`,
- * a temporary `MASON_ROOT`, `PI_FAUX_MODEL=1`, and the exit codes an operator sees. That difference is not academic —
- * `mason prompt` wrote a home at the root and the old first run left a half-built bot behind, and neither was visible
- * from inside a function that had already resolved its paths.
- *
- *     node --experimental-strip-types scripts/e2e-first-run.ts [--keep]
- *
- * What it proves, in order: flags are the whole first run (`mason init` with its three answers, then `mason new`, and a
- * second init asks nothing and changes nothing, and a second `new` is refused because the root holds one bot); the root
- * holds `common/` and one bot and no halves of its own; `mason doctor` ends green; `mason up` answers `/api/health` for
- * the bot it serves; and one turn is answered — a scripted Chord client holding the single user grant on that bot's
- * console entry, whose credential is minted through the surviving path, appends one submission and reads exactly one
- * reply row out of the conversation state. Nothing is written outside the temporary root: no `agent/` or `service/` at
- * the root itself, no stray `~/.mason`.
- *
- * The client is the SDK's user client, because that is the shape a person's app is: it submits, holds the conversation
- * state, and the assertion that outlives the delivery removal is the row it holds — one message, under one id.
- */
 import { spawn } from "node:child_process";
 import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -38,7 +17,6 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
 const keep = process.argv.includes("--keep");
 
-/** The bot this run makes, and the name every command finds it by. */
 const BOT = "bot";
 
 interface Result {
@@ -49,10 +27,6 @@ interface Result {
 
 let failures = 0;
 
-/**
- * Its own port, because this machine may be running a real bot on 8787: a scratch bot that finds another home's server
- * there is a failed check, and it should be — that is the identity check working as intended.
- */
 const freePort = String(20000 + Math.floor(Math.random() * 500));
 
 function check(ok: boolean, what: string, detail = ""): void {
@@ -64,7 +38,6 @@ function check(ok: boolean, what: string, detail = ""): void {
 	console.log(`  FAIL ${what}${detail === "" ? "" : `\n       ${detail.split("\n").join("\n       ")}`}`);
 }
 
-/** One CLI run, with the environment a first run has: a scratch root, the offline model, and no inherited target. */
 async function mason(directory: string, args: readonly string[], extra: NodeJS.ProcessEnv = {}): Promise<Result> {
 	const env: NodeJS.ProcessEnv = { ...process.env, PORT: freePort, ...extra, MASON_ROOT: directory, MASON_HOME: "" };
 	env.PI_FAUX_MODEL = "1";
@@ -86,7 +59,6 @@ async function mason(directory: string, args: readonly string[], extra: NodeJS.P
 	});
 }
 
-/** The shape of a tree, for "the second run changed nothing": paths, sizes and modes, not mtimes. */
 async function treeShape(directory: string, prefix = ""): Promise<string[]> {
 	const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
 	const lines: string[] = [];
@@ -107,7 +79,6 @@ async function main(): Promise<void> {
 	const home = join(directory, "home");
 	console.log(`root: ${directory}`);
 
-	// 1. A clean machine, the way a person starts: flags, then a bot. Nothing is asked, because nothing can be.
 	const init = await mason(directory, ["init", "--provider", "faux", "--model", "faux-1"], { HOME: home });
 	check(init.code === 0, "init on an empty root exits 0", init.stderr || init.stdout);
 	check(/the provider answered/.test(init.stdout), "init verifies the provider before it writes", init.stdout);
@@ -115,8 +86,6 @@ async function main(): Promise<void> {
 	check(made.code === 0, "new creates the first bot and ends doctor 0", made.stderr || made.stdout);
 	check(/7 checks: 7 ok, 0 failed/.test(made.stdout), "the doctor it ends with passes", made.stdout);
 
-	// 2. Again: nothing asked, nothing written twice — and a second bot refused, which is what makes the one bot the only
-	// one.
 	const before = await treeShape(directory);
 	const again = await mason(directory, ["init"], { HOME: home });
 	check(again.code === 0, "a second init exits 0", again.stderr || again.stdout);
@@ -129,7 +98,6 @@ async function main(): Promise<void> {
 	);
 	check((await mason(directory, ["new", "second"], { HOME: home })).code === 1, "a second new exits 1");
 
-	// 3. The root is a common store and one bot, and no halves at the root itself.
 	const entries = await readdir(directory);
 	check(entries.includes("common"), "the root holds common/", entries.join(", "));
 	check(entries.includes(BOT), `the root holds the bot it made (${BOT})`, entries.join(", "));
@@ -139,12 +107,10 @@ async function main(): Promise<void> {
 		entries.join(", "),
 	);
 
-	// 4. The bot is reachable: one granted connector, with a credential this home holds.
 	const doctor = await mason(directory, ["doctor"], { HOME: home });
 	check(doctor.code === 0, "doctor exits 0 for the bot it made", doctor.stderr || doctor.stdout);
 	check(/granted: console/.test(doctor.stdout), "the console is the connector it granted", doctor.stdout);
 
-	// 5. The server, on its own port, and the health answer that names the home it serves.
 	const port = 19000 + Math.floor(Math.random() * 500);
 	const env: NodeJS.ProcessEnv = {
 		...process.env,
@@ -176,8 +142,6 @@ async function main(): Promise<void> {
 	server.kill("SIGTERM");
 	await new Promise((done) => server.on("close", done));
 
-	// 6. One turn, answered. The server is opened in this process because the faux provider has to be *scripted*, and the
-	// client is a Chord client on the console entry with a credential minted by the surviving path.
 	const chatPort = port + 1;
 	const served = await startServer({
 		port: chatPort,
@@ -203,7 +167,6 @@ async function main(): Promise<void> {
 	});
 	try {
 		await client.start();
-		// One file in, one file out: the same content id on both rows, and the same credential downloads both.
 		const note = new TextEncoder().encode("sent by the person");
 		const upload = await client.attachments.upload(note, { mimeType: "text/plain", name: "note.txt" });
 		const outcome = await client.submit({
@@ -257,7 +220,6 @@ async function main(): Promise<void> {
 		await served.close();
 	}
 
-	// 7. Nothing leaked outside the root.
 	const stray = await readdir(join(home, ".mason")).catch(() => undefined);
 	check(stray === undefined, "nothing was written to the scratch HOME's ~/.mason", String(stray));
 
@@ -267,7 +229,6 @@ async function main(): Promise<void> {
 	process.exit(failures === 0 ? 0 : 1);
 }
 
-/** The committed message rows of a state: what a person's window reads, and the whole of a delivery. */
 function replyRows(
 	state: ConversationState | undefined,
 ): Array<{ id: string; text: string; assets?: Array<{ id: string }> }> {
@@ -278,7 +239,6 @@ function replyRows(
 	);
 }
 
-/** The committed user rows of a state, with the files they sent. */
 function userRows(
 	state: ConversationState | undefined,
 ): Array<{ id: string; text: string; assets?: Array<{ id: string }> }> {
@@ -289,7 +249,6 @@ function userRows(
 	);
 }
 
-/** The faux provider with one scripted turn: a file in the outbox, then the message that links it. */
 function scripted(): ResolvedModel {
 	const faux = fauxProvider();
 	const models = createModels();
@@ -304,7 +263,6 @@ function scripted(): ResolvedModel {
 	return { models, ref: { provider: "faux", modelId: "faux-1" }, faux: true };
 }
 
-/** Poll until `ready()` is true or ten seconds pass. */
 async function waitFor(ready: () => Promise<boolean>): Promise<boolean> {
 	const deadline = Date.now() + 10_000;
 	while (Date.now() < deadline) {

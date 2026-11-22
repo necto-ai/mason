@@ -1,10 +1,3 @@
-/**
- * Run one scenario against a real model, in a throwaway home, and hand back what the reader saw and what the agent did.
- *
- * Everything real is reused: the production prompt registry, the harness, the projection that decides what a reader
- * sees, and `delivery`. Everything expensive or unpredictable is replaced: tools answer from the scenario, and the home
- * is a temp directory that no other test or eval can see.
- */
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -27,7 +20,6 @@ export interface RunOptions {
 	readonly onProgress?: (line: string) => void;
 }
 
-/** The extensions a scenario runs with: the prompt, the delivery gates, and stubs for the four coding tools. */
 const CONTEXT: Context = BACKGROUND_CONTEXT;
 
 export async function runScenario(
@@ -46,7 +38,6 @@ export async function runScenario(
 			storage: "memory",
 			model: options.model,
 			extensions: [stub],
-			// The stubs stand in for `coding-tools`; the base repair would put the real ones back.
 			selection: [Prompt, Delivery, stub],
 			repairBase: false,
 			onReport: (error) => options.onProgress?.(`[report] ${String(error)}`),
@@ -59,8 +50,6 @@ export async function runScenario(
 			for (const turn of scenario.turns) {
 				const status = await submit(conversation, turn, options.timeoutMs ?? 180_000);
 				const view = await runtime.viewSnapshot(CONTEXT);
-				// The view is cumulative: what this turn delivered is the growth since the last one, so a later turn
-				// that says nothing cannot borrow the message an earlier turn already delivered.
 				const deliveredNow = projectTranscript(view).filter((item) => item.kind === "delivered").length;
 				turns.push({ delivered: deliveredNow - deliveredBefore, status });
 				deliveredBefore = deliveredNow;
@@ -128,21 +117,12 @@ async function seed(home: string, scenario: Scenario): Promise<void> {
 	await seedHome(home, scenario.home ?? {});
 }
 
-/**
- * Where a scenario's file lands: the path `housePaths` resolves it to.
- *
- * The prompt reads the soul from `service/soul.md` — a file no tool can see — and the profile and the skills index from
- * `agent/`. A seeder that planted `soul.md` under `agent/` put every scenario's persona in a file nothing reads, so all
- * six ran on the shipped default soul and still looked plausible, because the scenario text overlaps it.
- */
 export function seedPath(paths: HousePaths, file: string): string {
 	const name = file.split("/")[0] ?? file;
 	const entry = HOUSE_ENTRIES.find((candidate) => candidate.name === name);
-	// A file mason has never heard of belongs with the agent's own: that is the half the tool machine sees.
 	return join(entry?.half === "service" ? paths.serviceDir : paths.agentDir, file);
 }
 
-/** Plant a scenario's `home` files before the runtime opens the home, so `ensureHouse` fills the gaps around them. */
 export async function seedHome(home: string, files: Record<string, string>): Promise<void> {
 	const paths = housePaths(home);
 	for (const [file, content] of Object.entries(files)) {
@@ -152,7 +132,6 @@ export async function seedHome(home: string, files: Record<string, string>): Pro
 	}
 }
 
-/** What the reader received, and what the agent did to produce it — from the same projection the browser uses. */
 function collect(
 	scenario: Scenario,
 	model: { provider: string; modelId: string },
@@ -166,8 +145,6 @@ function collect(
 		if (item.kind === "delivered") delivered.push(item.text);
 		else if (item.kind === "notice") notices.push(item.text);
 	}
-	// Every call the model made, in order, including the real tools a stub did not replace. The message is not a call:
-	// it is the assistant text the projection turns into a row, so the trace's delivered list is where it shows up.
 	const calls = toolCallsOf(view);
 	const usage = view.docs["pi.usage"] as { models?: Record<string, { input?: number; output?: number }> } | undefined;
 	let input = 0;
@@ -190,7 +167,6 @@ function collect(
 	};
 }
 
-/** How often the delivery gate had to intervene: one reminder entry per silent submission. */
 function remindersOf(view: ConversationView): number {
 	let count = 0;
 	for (const entry of view.entries) {
@@ -202,7 +178,6 @@ function remindersOf(view: ConversationView): number {
 	return count;
 }
 
-/** The model's tool calls in transcript order, read from the entries the harness committed. */
 function toolCallsOf(view: ConversationView): { name: string; args: unknown }[] {
 	const calls: { name: string; args: unknown }[] = [];
 	for (const entry of view.entries) {
@@ -218,11 +193,6 @@ function toolCallsOf(view: ConversationView): { name: string; args: unknown }[] 
 	return calls;
 }
 
-/**
- * Every file the agent wrote into its own temp home, concatenated: a fact it wrote down is one of these, whether it
- * named `agent/profile.md`, `log/` or a relative path in the workspace. `.git` and the seeded skills are skipped — a
- * skill is mason's prose, not the agent's.
- */
 async function readWritten(home: string): Promise<string> {
 	const parts: string[] = [];
 	async function walk(dir: string): Promise<void> {

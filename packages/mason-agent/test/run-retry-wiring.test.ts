@@ -1,18 +1,3 @@
-/**
- * A run the provider killed is re-armed with nobody looking at the UI.
- *
- * The supervisor is a policy over the conversation, not over a connection. The person who needs a failed run retried is
- * the one who is *not* in the web client — a bot's chat, overnight — so the server's own watch has to feed it. The bug
- * this pins: fed from a browser's `viewSync` instead, the supervisor observed nothing whenever no client was connected,
- * and a run that a provider killed stayed dead until somebody wrote again (a bot's two messages sat unanswered for 3
- * and 12 hours on 2026-10-30, with no `[run-retry]` line in the log at all).
- *
- * The whole path is exercised: a hook fire opens a run, the faux provider fails it, and the supervisor's own fire is what
- * the transcript has to show — no client is ever created here, and no socket carries the fire.
- *
- * The second test is #83's: a retry is the one turn that resumes somebody else's, so it carries the origin of the turn it
- * resumes and its `reply` lands in the chat that was waiting instead of a transcript nobody in it can read.
- */
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -40,15 +25,8 @@ after(async () => {
 	for (const directory of directories) await rm(directory, { recursive: true, force: true });
 });
 
-// An empty list is the honest one: this test fires a hook the build defines, and the retry is the subject, not a
-// connector's grant.
 const integrations = { integrations: {} };
 
-/**
- * An events file a test home starts with: the boot ships none, but these tests fire the chat hook through a runtime
- * whose definitions come from this file. The schedule is far past every test's lifetime, so only the test's own fires
- * become turns.
- */
 const ROUTINES = JSON.stringify([
 	{
 		source: "telegram",
@@ -65,7 +43,6 @@ const ROUTINES = JSON.stringify([
 	},
 ]);
 
-/** The one chat the reply of the second test has to land in: a user face, and the room the words arrived in. */
 const CHAT = { connector: "telegram", ref: "team" };
 const chatIntegrations = {
 	integrations: {
@@ -88,15 +65,8 @@ async function temporaryHome(file: unknown = integrations): Promise<HousePaths> 
 	return paths;
 }
 
-/** The first line of the retry hook's instruction, which is how the factory tells the resumed turn from the parked one. */
 const RETRY_INSTRUCTION = `[ROUTINE: ${RETRY_HOOK.name}]`;
 
-/**
- * One of mason's own working notes, committed the way a compaction commits its summary mid-turn.
- *
- * A raw commit rather than a submission: the entry changes what the model sees, so a submission would queue it behind
- * the run already going, and the transcript the retry reads would not hold it where a real compaction puts it.
- */
 async function writeCompaction(conversation: Conversation, text: string): Promise<void> {
 	await conversation.commit(
 		(tx) =>
@@ -108,7 +78,6 @@ async function writeCompaction(conversation: Conversation, text: string): Promis
 	);
 }
 
-/** The text a message carries: a plain string, or its text blocks joined. */
 function textOfMessage(message: { readonly content?: unknown }): string {
 	const content = message.content;
 	if (typeof content === "string") return content;
@@ -116,39 +85,22 @@ function textOfMessage(message: { readonly content?: unknown }): string {
 	return content.map((part) => (part as { text?: string }).text ?? "").join("");
 }
 
-/**
- * A provider that is down for the turn somebody is waiting on, and answers only the retry.
- *
- * The run under the person's turn has to fail for the supervisor to have anything to re-arm, and it fails as many times
- * as the run's own retry policy asks — so this is a factory and not a list: an error for every generation that is not
- * the retry's, and the retry's one text answer.
- */
 const ANSWER_ONLY_THE_RETRY: FauxResponseFactory = (context) => {
 	const answering = context.messages.some(
 		(message) => message.role === "user" && textOfMessage(message).startsWith(RETRY_INSTRUCTION),
 	);
-	// An error pi-ai will not retry, which is the shape `failingModel()` gives too: a retryable outage would spend the
-	// run's own backoff before the supervisor ever sees the failure, and the supervisor is what this test watches.
 	if (!answering) return fauxAssistantMessage("", { stopReason: "error", errorMessage: "the provider is down" });
 	return fauxAssistantMessage(fauxText("Отвечаю: да, можно."));
 };
 
-/** A provider with nothing scripted: every run it serves ends in the faux error, which is the failure under test. */
 function failingModel(): ResolvedModel {
 	return scriptedModel([]);
 }
 
-/** The parked turn fails, the retry answers — one step per generation, and the factory reads the context to tell them apart. */
 function retryOnlyModel(): ResolvedModel {
 	return scriptedModel(Array.from({ length: 8 }, () => ANSWER_ONLY_THE_RETRY));
 }
 
-/**
- * The model under the failure: that generation waits for a working note to land and then dies.
- *
- * The compaction has to be written while the run is in flight and before its error, because that is the order a turn
- * that compacts before it answers leaves behind — the error entry is what the supervisor slices the transcript at.
- */
 function compactionThenFailure(compact: () => Promise<void>): FauxResponseStep {
 	return async () => {
 		await compact();
@@ -156,7 +108,6 @@ function compactionThenFailure(compact: () => Promise<void>): FauxResponseStep {
 	};
 }
 
-/** A faux provider whose script is set after the server exists: the failure under test needs the conversation it writes. */
 function stagedModel(): {
 	readonly access: ResolvedModel;
 	readonly script: (steps: readonly FauxResponseStep[]) => void;
@@ -170,7 +121,6 @@ function stagedModel(): {
 	};
 }
 
-/** A provider that answers each generation with the next step, one per call, and errors once the script runs out. */
 function scriptedModel(steps: readonly FauxResponseStep[]): ResolvedModel {
 	const faux = fauxProvider();
 	const models = createModels();
@@ -184,17 +134,13 @@ interface Entries {
 	readonly id: number;
 	readonly stopReason?: string;
 	readonly hookId?: string;
-	/** The entry's own `data`, which is where a fire's origin and a reply's target live. */
 	readonly data: Record<string, unknown>;
 }
 
-/** The committed transcript, flattened to what these tests ask of it: the kind, and the two reasons inside. */
 async function entries(runtime: AgentRuntime): Promise<Entries[]> {
 	const conversation = await runtime.conversation();
 	const page = await conversation.entries({}, 100, undefined, BACKGROUND_CONTEXT);
 	return page.items.map((entry) => {
-		// `Message` is a union and only some members carry a reason: a system entry in the same transcript does not, so
-		// the narrowing says "the first message is one that has a reason" rather than asserting it.
 		const assistant = entry.model?.[0];
 		const stopReason = assistant !== undefined && "stopReason" in assistant ? assistant.stopReason : undefined;
 		const data =
@@ -211,7 +157,6 @@ async function entries(runtime: AgentRuntime): Promise<Entries[]> {
 	});
 }
 
-/** The messages the reader has been sent, from the same projection a client reads. */
 async function answers(runtime: AgentRuntime): Promise<string[]> {
 	const view = await runtime.viewSnapshot(BACKGROUND_CONTEXT);
 	return projectTranscript(view).flatMap((row) =>
@@ -219,15 +164,10 @@ async function answers(runtime: AgentRuntime): Promise<string[]> {
 	);
 }
 
-/** How many times `hookId` fired, from the committed transcript. */
 async function fires(runtime: AgentRuntime, hookId: string): Promise<number> {
 	return (await entries(runtime)).filter((entry) => entry.kind === HOOK_ENTRY_KIND && entry.hookId === hookId).length;
 }
 
-/**
- * Waits for a transcript to say something. Every step here is a run that has to start, call the provider, fail and
- * commit, and a test that reads once is a test that reads too early.
- */
 async function waitFor(runtime: AgentRuntime, done: (all: Entries[]) => boolean, deadlineMs = 5_000): Promise<void> {
 	const deadline = Date.now() + deadlineMs;
 	while (!done(await entries(runtime)) && Date.now() < deadline) {
@@ -235,7 +175,6 @@ async function waitFor(runtime: AgentRuntime, done: (all: Entries[]) => boolean,
 	}
 }
 
-/** One server over a test home: the two tests differ in the transcript they provoke, not in the boot. */
 async function serve(paths: HousePaths, modelAccess: ResolvedModel): Promise<RunningServer> {
 	const directory = dirname(paths.home);
 	return startServer({
@@ -249,10 +188,6 @@ async function serve(paths: HousePaths, modelAccess: ResolvedModel): Promise<Run
 	});
 }
 
-/**
- * The retry schedule a test runs under, restored afterwards. One attempt, arriving while the test is still looking: the
- * delay is the thing under test, not the patience.
- */
 async function withSchedule(run: () => Promise<void>, delayMs = "40"): Promise<void> {
 	const previous = { delays: process.env.PDA_RUN_RETRY_DELAYS_MS, attempts: process.env.PDA_RUN_RETRY_ATTEMPTS };
 	process.env.PDA_RUN_RETRY_DELAYS_MS = delayMs;
@@ -267,7 +202,6 @@ async function withSchedule(run: () => Promise<void>, delayMs = "40"): Promise<v
 	}
 }
 
-/** Waits for a captured log line: the supervisor's own report is the only evidence a re-fire was armed. */
 async function waitForLog(lines: readonly string[], match: string, deadlineMs = 5_000): Promise<void> {
 	const deadline = Date.now() + deadlineMs;
 	while (!lines.some((line) => line.includes(match)) && Date.now() < deadline) {
@@ -287,7 +221,6 @@ describe("a failed run with no browser connected", () => {
 				const opened = await server.runtime.hooks.fire("team-chat", { payload: "Таня: ?" });
 				assert.ok(opened.id !== undefined, "the fire opens a run, and the run is the failure under test");
 
-				// The run failed, and no client was ever created: a supervisor fed from a connection would observe nothing.
 				await waitFor(server.runtime, (all) => all.some((entry) => entry.stopReason === "error"));
 				assert.ok(
 					(await entries(server.runtime)).some((entry) => entry.stopReason === "error"),
@@ -296,7 +229,6 @@ describe("a failed run with no browser connected", () => {
 
 				await waitFor(server.runtime, (all) => all.some((entry) => entry.hookId === RETRY_HOOK_ID));
 				assert.equal(await fires(server.runtime, RETRY_HOOK_ID), 1, "the supervisor fired its own retry hook");
-				// The budget is one: a second failure is not a second retry.
 				await new Promise((resolve) => setTimeout(resolve, 400));
 				assert.equal(await fires(server.runtime, RETRY_HOOK_ID), 1, "one attempt, then the manual retry hook");
 			} finally {
@@ -311,10 +243,8 @@ describe("a retry of a turn somebody was waiting on", () => {
 		await withSchedule(async () => {
 			const server = await serve(await temporaryHome(chatIntegrations), retryOnlyModel());
 			try {
-				// A person wrote in the chat, and the fire carries where those words came from: that is where a reply goes.
 				await server.runtime.hooks.fire("team-chat", { payload: "Таня: ?", origin: CHAT });
 
-				// The run under their turn spends its own retries first (seconds), and only then is the supervisor's turn.
 				const deadline = Date.now() + 20_000;
 				while (!(await answers(server.runtime)).includes("Отвечаю: да, можно.") && Date.now() < deadline) {
 					await new Promise((resolve) => setTimeout(resolve, 20));
@@ -326,8 +256,6 @@ describe("a retry of a turn somebody was waiting on", () => {
 					CHAT,
 					"the retry resumes the failed turn, so it carries where that turn was answering",
 				);
-				// The answer is a row of the retry's run: one message, under the id its run started from. The failed run's
-				// entry is still in the history, and its message is not duplicated by the retry.
 				const view = await server.runtime.viewSnapshot(BACKGROUND_CONTEXT);
 				const delivered = projectTranscript(view).filter((row) => row.kind === "delivered");
 				assert.deepEqual(
@@ -360,7 +288,6 @@ describe("a retry of a turn that compacted before it failed", () => {
 					),
 					...Array.from({ length: 8 }, () => ANSWER_ONLY_THE_RETRY),
 				]);
-				// A person wrote in the chat, and the fire carries where those words came from.
 				await server.runtime.hooks.fire("team-chat", { payload: "Таня: ?", origin: CHAT });
 
 				const deadline = Date.now() + 20_000;
@@ -394,7 +321,6 @@ describe("a retry of a turn that compacted before it failed", () => {
 
 describe("a shutdown with a re-fire still pending", () => {
 	it("drops it rather than firing into a runtime that is gone", async () => {
-		// Long enough to close inside the window, short enough to wait out.
 		await withSchedule(async () => {
 			const server = await serve(await temporaryHome(), failingModel());
 			const armed: string[] = [];
@@ -410,14 +336,11 @@ describe("a shutdown with a re-fire still pending", () => {
 			let closed = false;
 			try {
 				await server.runtime.hooks.fire("team-chat", { payload: "Таня: ?" });
-				// The supervisor says it armed the re-fire; from here the timer is the only thing that can act.
 				await waitForLog(armed, "[run-retry] run failed");
 				await server.close();
 				closed = true;
-				// The delay matures after the process stopped: a supervisor nobody closed fires here, into a closed runtime.
 				await new Promise((resolve) => setTimeout(resolve, 700));
 			} finally {
-				// A case that failed before its own shutdown leaves a listening server behind, and the file hangs instead.
 				if (!closed) await server.close().catch(() => undefined);
 				console.warn = warn;
 				console.error = error;

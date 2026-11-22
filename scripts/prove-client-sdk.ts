@@ -1,16 +1,3 @@
-/**
- * Prove the SDK as a stranger gets it.
- *
- * Build the two packages, pack them, install the tarballs into an empty temporary project, and run the published
- * conformance suite there with plain `node` — no `--conditions=source`, no `--experimental-strip-types`, no path into
- * mason's tree. The project lives outside the repository on purpose: a relative import that worked from inside would be
- * exactly the bug this check exists to catch.
- *
- * It also fails if an installed package ships a `.ts` file, because a consumer's Node refuses to strip types inside
- * `node_modules`, and an SDK that only runs from source is not a published SDK.
- *
- * Run with `npm run prove:client`. It writes nothing into the repository.
- */
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -20,7 +7,6 @@ import { promisify } from "node:util";
 
 const exec = promisify(execFile);
 const root = fileURLToPath(new URL("..", import.meta.url));
-/** The two packages, by the names a consumer installs them under. */
 const PACKAGES = ["mason-protocol", "mason-client"] as const;
 
 const FIXTURE = `import { CONTRACTS } from "mason-protocol";
@@ -93,8 +79,6 @@ async function main(): Promise<void> {
 		});
 
 		await step("no package ships a TypeScript file", async () => {
-			// Both packages are top-level in `node_modules` because their names are unscoped; a scope would have put them
-			// one directory deeper and this walk would have looked at the wrong place.
 			const stray = (
 				await Promise.all(PACKAGES.map((name) => typescriptIn(join(project, "node_modules", name))))
 			).flat();
@@ -128,7 +112,6 @@ async function typescriptIn(dir: string): Promise<string[]> {
 	return found;
 }
 
-/** A file a consumer's Node could not load: a declaration is not source, and `dist` is where it belongs. */
 function isSource(name: string): boolean {
 	if (name.endsWith(".d.ts")) return false;
 	return name.endsWith(".ts") || name.endsWith(".tsx") || name.endsWith(".mts");

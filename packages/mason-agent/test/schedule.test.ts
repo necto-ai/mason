@@ -1,9 +1,3 @@
-/**
- * A schedule is a wall clock in one zone, and a slot is the instant it was due.
- *
- * The tests pin the three units, the two calendar edges that make an interval wrong (a DST day and a month without the
- * 31st), and the one-line sentence a person reads.
- */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { nextFireAt, parseSchedule, renderSchedule } from "../src/server/schedule.ts";
@@ -70,7 +64,7 @@ describe("the next fire", () => {
 			timezone: "UTC",
 			days: ["mon", "wed"],
 		});
-		const anchor = new Date("2026-10-19T09:00:00.500Z"); // a Monday
+		const anchor = new Date("2026-10-19T09:00:00.500Z");
 		assert.equal(
 			nextFireAt(weekly, anchor, anchor).toISOString(),
 			"2026-10-21T09:00:00.000Z",

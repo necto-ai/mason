@@ -1,10 +1,3 @@
-/**
- * The integration contract, end to end and headless: an MCP server declares its manifest and docs, an event client
- * raises one kind it was granted, and nobody has a user client.
- *
- * What this pins that the unit tests cannot: the boot seeds the declared event into the agent's file disabled, the agent
- * enabling it is what lets the event wake, and the MCP docs are read through the catalog rather than a mounted folder.
- */
 import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -69,7 +62,6 @@ describe("one integration contract", () => {
 			steps: replyTurns(["Issue 7 opened."]),
 		});
 		try {
-			// The boot wrote the connector's event into the agent's file, disabled, with the connector's own prompt.
 			const seeded = JSON.parse(await readFile(paths.events, "utf8")) as Array<Record<string, unknown>>;
 			assert.deepEqual(
 				seeded.find((entry) => entry.source === "issues" && entry.kind === "issue.opened"),
@@ -81,7 +73,6 @@ describe("one integration contract", () => {
 					prompt: "Read the issue and report it.",
 				},
 			);
-			// The same boot read the manifest and the docs; the tool count is the snapshot the prompt reads.
 			const surface = served.server.runtime.mcp.surface.issues;
 			assert.equal(surface?.toolCount, 1);
 			assert.deepEqual(surface?.docs, [{ name: "guide", uri: "mason://issues/guide", title: "The issue guide" }]);
@@ -90,7 +81,6 @@ describe("one integration contract", () => {
 			assert.equal(read.ok, true);
 			assert.match(read.ok ? read.text : "", /Read the issue before answering/);
 
-			// The agent decides: the connector's default was off, and this edit is what arms it.
 			const enabled = seeded.map((entry) =>
 				entry.source === "issues" && entry.kind === "issue.opened" ? { ...entry, enabled: true } : entry,
 			);

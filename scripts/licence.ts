@@ -1,36 +1,21 @@
-/**
- * `npm run check:licence` — one licence, stated the same way everywhere it is stated.
- *
- * A repository can carry a single licence and still publish two. The manifests, the README, the licence text and NOTICE
- * are four places a reader meets the terms, and they are edited at different times: mason's drifted, with NOTICE
- * claiming Apache-2.0 for the three published packages while every manifest, the README and LICENSE said AGPL-3.0. A
- * connector author reading the repository would have built against the wrong one, and a comment saying "the licence"
- * does not fail when it stops being true.
- *
- * This is the check that fails instead. It reads the files as a consumer receives them and names every disagreement.
- */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 
-/** The one spelling the manifests use, and the one the README has to name. */
 export const LICENCE = "AGPL-3.0-only";
 
-/** The packages this repository publishes, and the tarballs a consumer's terms arrive in. */
 const MANIFESTS = [
 	"packages/mason-agent/package.json",
 	"packages/protocol/package.json",
 	"packages/client/package.json",
 ] as const;
 
-/** The per-package copies npm puts in a tarball: a LICENSE beside the package.json, not one three directories up. */
 const COPIES = ["packages/mason-agent/LICENSE", "packages/protocol/LICENSE", "packages/client/LICENSE"] as const;
 
 const read = (path: string): string => readFileSync(join(root, path), "utf8");
 
-/** Every disagreement, in the order a reader meets them. Empty is the pass. */
 export function disagreements(): string[] {
 	const problems: string[] = [];
 	for (const path of MANIFESTS) {

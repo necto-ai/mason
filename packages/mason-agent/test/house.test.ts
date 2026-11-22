@@ -1,9 +1,3 @@
-/**
- * `~/.mason` is the agent's home, in two halves: `agent/` (mounted into the tool machine, the agent's own files and its
- * history) and `service/` (the server's, never a path inside the tool machine). These tests pin the layout, the modes a
- * fresh install creates, the log write through the execution environment, and the migration that turns a home from
- * before the split into this one — without ever touching the real home: every home here is a temporary directory.
- */
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -33,10 +27,6 @@ const run = promisify(execFile);
 
 const directories = new Set<string>();
 
-/**
- * The tool machine, for the writes that happen there. `LocalExecutionEnv` is a real environment over a real `pi-env`
- * daemon: the same code path the deployment's SSH target takes, on one box.
- */
 const connection = new Connection({ command: daemonCommand(localDaemon()) });
 function toolMachine(cwd: string): LocalExecutionEnv {
 	return new LocalExecutionEnv({ connection, cwd });
@@ -62,7 +52,6 @@ test("housePaths() follows MASON_HOME and puts every path in one of the two halv
 			home,
 			agentDir: join(home, "agent"),
 			serviceDir: join(home, "service"),
-			// The agent's half: its own files, on the volume the tool machine mounts.
 			profile: join(home, "agent", "profile.md"),
 			logDir: join(home, "agent", "log"),
 			journalDir: join(home, "agent", "journal"),
@@ -70,10 +59,8 @@ test("housePaths() follows MASON_HOME and puts every path in one of the two halv
 			agentsDir: join(home, "agent", "agents"),
 			workspaceDir: join(home, "workspace"),
 			events: join(home, "agent", "events.json"),
-			// The server's half: the soul it renders, the door, the keys and the state.
 			soul: join(home, "service", "soul.md"),
 			config: join(home, "service", "config.json"),
-			// Later than the split: no home from before it has one, so no migration carries it.
 			integrations: join(home, "service", "integrations.json"),
 			sshDir: join(home, "service", "ssh"),
 			piDir: join(home, "service", "pi"),
@@ -93,7 +80,6 @@ test("an empty MASON_HOME is unset, not the current directory", async () => {
 	process.env.MASON_HOME = "";
 	process.env.MASON_ROOT = root;
 	try {
-		// An empty variable is what a shell exports when a value is missing, and it must not turn the home into the cwd.
 		assert.notEqual(housePaths().home, process.cwd());
 		assert.equal(housePaths().home, join(root, "alice"), "an empty MASON_HOME leaves the root to decide");
 		assert.equal(
@@ -140,7 +126,6 @@ test("ensureHouse() creates both halves, their directories and the modes they ne
 	]) {
 		const info = await stat(directory);
 		assert.ok(info.isDirectory(), `${directory} exists`);
-		// 0700 on every directory of the home: it holds a transcript of everything Denis said.
 		assert.equal(info.mode & 0o777, 0o700, `${directory} is private`);
 	}
 	assert.equal((await readFile(paths.soul, "utf8")).trim(), "SOUL FROM THE PRODUCT");
@@ -151,7 +136,6 @@ test("ensureHouse() never overwrites an existing soul.md", async () => {
 	const paths = housePaths(join(await tempDir("mason-house-soul-"), "home"));
 	await ensureHouse(paths, "SOUL FROM THE PRODUCT");
 
-	// Denis's file, once it exists, is the source of truth: a restart must not put the default back.
 	await writeFile(paths.soul, "Denis's own soul.\n", "utf8");
 	await ensureHouse(paths, "SOUL FROM THE PRODUCT");
 	assert.equal(await readFile(paths.soul, "utf8"), "Denis's own soul.\n");
@@ -177,7 +161,6 @@ test("capText() leaves short text alone and truncates long text on a line bounda
 
 	const long = ["line 1 of the profile", "line 2 of the profile", "line 3 of the profile"].join("\n");
 	const capped = capText(long, 40);
-	// The cut lands on the newline after line 1 rather than in the middle of line 2, so the prompt stays readable.
 	assert.equal(capped, "line 1 of the profile\n\n(truncated at 40 characters)");
 	assert.ok(capped.length < long.length);
 });
@@ -191,7 +174,6 @@ test("ensureHouse() moves a home that still has agent/workspace to workspace/ be
 
 	assert.ok(!existsSync(join(paths.agentDir, "workspace")), "the old path is gone");
 	assert.equal(await readFile(join(paths.workspaceDir, "half-written.md"), "utf8"), "a tool was here\n");
-	// The memory's repository never held the scratch directory, so nothing was committed or ignored.
 	assert.ok(!existsSync(join(paths.agentDir, ".git")));
 });
 
@@ -216,18 +198,15 @@ test("ensureRepository() initialises the agent's half as a git repository, with 
 	await ensureRepository(paths.agentDir);
 	assert.ok(existsSync(join(paths.agentDir, ".git")), "a memory write is something Denis can revert");
 	assert.ok(!existsSync(join(paths.home, ".git")), "and the history is on the half the tool machine mounts");
-	// A new home's files — the profile, the seeded skills — are its first memory, not untracked dirt forever.
 	const history = await run("git", ["log", "--format=%s"], { cwd: paths.agentDir });
 	assert.deepEqual(history.stdout.trim().split("\n"), ["The agent's memory starts here"]);
 	const tracked = await run("git", ["ls-files"], { cwd: paths.agentDir });
 	assert.match(tracked.stdout, /^\.gitignore$/m);
 	assert.match(tracked.stdout, /^skills\/ocr\/SKILL\.md$/m, "the skills seeded at this boot are committed");
-	// The workspace is `../workspace`, outside the repository: its ignore line went with the move.
 	assert.ok(!existsSync(join(paths.agentDir, "workspace")));
 	assert.doesNotMatch(await readFile(join(paths.agentDir, ".gitignore"), "utf8"), /^workspace\/$/m);
 	assert.equal((await run("git", ["status", "--porcelain"], { cwd: paths.agentDir })).stdout.trim(), "");
 
-	// Running it on every start must be harmless.
 	await ensureRepository(paths.agentDir);
 	assert.ok(existsSync(join(paths.agentDir, ".git")));
 	assert.equal(
@@ -236,11 +215,6 @@ test("ensureRepository() initialises the agent's half as a git repository, with 
 	);
 });
 
-/**
- * The branch is mason's to name, not the machine's: bare `git init` takes `init.defaultBranch`, which is `main` on a
- * developer's box and `master` on a fresh runner, and the boot's checkout follows whatever branch `hostBranch` reads
- * from this repository. `GIT_CONFIG_COUNT` injects it into every child `git` here, the way a runner's config would.
- */
 test("ensureRepository() creates the memory repository on main, whatever init.defaultBranch says", async (t) => {
 	if (!(await gitAvailable())) {
 		t.skip("git is not installed");
@@ -263,21 +237,12 @@ test("ensureRepository() creates the memory repository on main, whatever init.de
 	}
 	const head = await run("git", ["symbolic-ref", "--short", "HEAD"], { cwd: paths.agentDir });
 	assert.equal(head.stdout.trim(), CREATED_BRANCH);
-	// One branch, the one mason named: a `master` here would be a second history the device is never sent.
 	const branches = await run("git", ["for-each-ref", "--format=%(refname:short)", "refs/heads"], {
 		cwd: paths.agentDir,
 	});
 	assert.deepEqual(branches.stdout.trim().split("\n"), [CREATED_BRANCH]);
 });
 
-/**
- * The migration: one command, and a home that is either moved or left exactly as it was.
- *
- * The fixture is a home from before the split: the soul, the profile, a day's log, the database, the SSH key, the
- * pairing-token hashes and one file mason has never heard of, all at the root of a git repository that has already
- * committed them. The secret strings are planted so the tests can say the key and the token hashes never enter the
- * repository `agent/` becomes, which is the half the tool machine mounts.
- */
 const SECRETS = {
 	key: "SECRET-PRIVATE-KEY-3f9a",
 	tokens: "SECRET-TOKEN-HASH-8c41",
@@ -302,7 +267,6 @@ async function oldLayoutHome(t: { skip(reason: string): void }): Promise<string>
 	return home;
 }
 
-/** The same home as a directory that is not a repository at all: mason's own state is not required to be under git. */
 async function oldLayoutHomeWithoutGit(): Promise<string> {
 	const home = await tempDir("mason-house-migrate-");
 	await mkdir(join(home, "log"), { recursive: true });
@@ -322,24 +286,20 @@ async function oldLayoutHomeWithoutGit(): Promise<string> {
 		"---\nname: weekly\ndescription: Write it.\n---\n",
 		"utf8",
 	);
-	// A file mason does not know about: an upgrade is not allowed to decide what happens to it.
 	await writeFile(join(home, "NOTES.md"), "Denis's own notes.\n", "utf8");
 	return home;
 }
 
-/** Whether `path` is `root` or inside it: the question every repair instruction is held to. */
 function _inside(path: string, root: string): boolean {
 	return path === root || path.startsWith(`${root}${sep}`);
 }
 
-/** The `mv <from> <to>` a refusal hands an operator: a repair is a command they can run, so a test runs it. */
 function _instructionIn(reason: string): { from: string; to: string } {
 	const match = /`mv (\S+) (\S+)`/.exec(reason);
 	assert.ok(match, `the refusal names a move to run: ${reason}`);
 	return { from: match[1] as string, to: match[2] as string };
 }
 
-/** Every file under `dir`, so a test can ask whether a secret is anywhere in a half and not merely uncommitted. */
 async function _filesUnder(dir: string): Promise<string[]> {
 	const found: string[] = [];
 	const pending = [dir];
@@ -354,21 +314,14 @@ async function _filesUnder(dir: string): Promise<string[]> {
 	return found;
 }
 
-/** The files a repository's every revision holds that contain `needle`: the history a tool machine can read. */
 async function _inHistory(dir: string, needle: string): Promise<string> {
 	const revisions = (await run("git", ["rev-list", "--all"], { cwd: dir })).stdout.trim().split("\n");
 	return run("git", ["grep", "-l", "--full-name", needle, ...revisions], { cwd: dir }).then(
 		(result) => result.stdout.trim(),
-		// `git grep` exits 1 when nothing matches, which is the answer these tests want.
 		() => "",
 	);
 }
 
-/**
- * The home the abandoned first version of the migration left behind: `agent/` is the home's only repository (there is
- * none at the root), and its history holds the service half. `withServiceFiles` keeps that version's layout exactly —
- * the key still sitting in `agent/service` — which is a different repair from the history, and a second refusal.
- */
 async function _abandonedFirstVersionHome(
 	t: { skip(reason: string): void },
 	options: { withServiceFiles?: boolean } = {},
@@ -394,16 +347,10 @@ async function _abandonedFirstVersionHome(
 	await run("git", ["-c", "user.name=denis", "-c", "user.email=d@example.com", "commit", "--quiet", "-m", "v1"], {
 		cwd: paths.agentDir,
 	});
-	// Files moved back out of the half while the history still names them: the leak is in the repository, not the tree.
 	if (!(options.withServiceFiles ?? true)) await rm(join(paths.agentDir, "service"), { recursive: true, force: true });
 	return home;
 }
 
-/**
- * The state a migration that died after its move loop leaves: both halves populated, nothing at the root — and none of
- * the tail, so `workspace/` is not ignored, `agent/.git` has no HEAD and the repository at the root still holds both
- * halves. Every rerun used to answer `unchanged` over it.
- */
 async function _interruptedMigration(t: { skip(reason: string): void }): Promise<string> {
 	const home = await oldLayoutHome(t);
 	if (home === "") return "";
@@ -434,7 +381,6 @@ test("ensureRepository() refuses a service path in the agent's half, and creates
 			return true;
 		},
 	);
-	// Boot fails loudly *before* `git init` and before any staging, because a history with the key in it cannot be undone.
 	assert.ok(!existsSync(join(paths.agentDir, ".git")), "no repository was created");
 	assert.ok(!existsSync(join(paths.agentDir, ".gitignore")), "and nothing was staged");
 	assert.equal(await readFile(join(paths.agentDir, "service", "ssh", "id_ed25519"), "utf8"), `${SECRETS.key}\n`);
@@ -468,13 +414,10 @@ test("ensureHouse() seeds the skills mason ships into the agent's half, and reco
 		"and the index lists it, so the prompt's pointer is not pointing at nothing",
 	);
 
-	// The record of what was copied lives in the server's half, where neither a tool nor the skills scan can reach it.
 	const record = join(paths.dataDir, "seeded-skills.json");
 	assert.ok(record.startsWith(paths.serviceDir), "the record is in the half the agent cannot see");
 	assert.ok(!record.startsWith(paths.agentDir), "and never in the half the tool machine mounts");
 	const recorded = JSON.parse(await readFile(record, "utf8")) as Record<string, string>;
-	// One entry per skill the repository ships, whatever that set is today: this test is about the record, not a
-	// catalogue of the manuals.
 	assert.deepEqual(
 		Object.keys(recorded).sort(),
 		(await readdir(SHIPPED_SKILLS_DIR)).sort(),
@@ -491,11 +434,6 @@ test("ensureHouse() seeds the skills mason ships into the agent's half, and reco
 	assert.ok(!(await readdir(paths.skillsDir)).includes("seeded-skills.json"));
 });
 
-/**
- * A shipped skill is a manual the renderer depends on, so an upgrade has to reach a home that already has a copy —
- * while a copy somebody edited has to survive the same boot. `shippedDir` stands in for the repository's `skills/` so
- * one home can see two editions of the same skill.
- */
 test("a shipped skill follows the shipped copy, and an edited copy is never touched", async () => {
 	const paths = housePaths(join(await tempDir("mason-house-seed-upgrade-"), "home"));
 	await ensureHouse(paths, "SOUL FROM THE PRODUCT");
@@ -511,7 +449,6 @@ test("a shipped skill follows the shipped copy, and an edited copy is never touc
 	await seedShippedSkills(paths, shipped);
 	assert.match(await readFile(copy, "utf8"), /first edition/, "an unedited copy is replaced by the shipped one");
 
-	// The next release of the same skill: nobody edited the home's copy, so it follows.
 	await writeFile(
 		join(shipped, "ocr", "SKILL.md"),
 		"---\nname: ocr\ndescription: The OCR manual, second edition.\n---\n",
@@ -520,7 +457,6 @@ test("a shipped skill follows the shipped copy, and an edited copy is never touc
 	await seedShippedSkills(paths, shipped);
 	assert.match(await readFile(copy, "utf8"), /second edition/, "an upgrade reaches a home that already booted");
 
-	// Denis's own copy of the same skill: the hash no longer matches the record, so seeding leaves it alone.
 	await writeFile(copy, "---\nname: ocr\ndescription: Denis's own OCR notes.\n---\n", "utf8");
 	await writeFile(
 		join(shipped, "ocr", "SKILL.md"),
@@ -531,10 +467,6 @@ test("a shipped skill follows the shipped copy, and an edited copy is never touc
 	assert.match(await readFile(copy, "utf8"), /Denis's own OCR notes/, "an edited copy is theirs, upgrade or not");
 });
 
-/**
- * The other side of seeding: a skill the repository stops shipping. The copy mason put there is ours and untouched, so
- * it goes; a copy somebody edited is theirs, and no release deletes it.
- */
 test("a seeded skill the repository stops shipping is withdrawn unless somebody edited it", async () => {
 	const paths = housePaths(join(await tempDir("mason-house-seed-withdraw-"), "home"));
 	await ensureHouse(paths, "SOUL FROM THE PRODUCT");
@@ -547,14 +479,12 @@ test("a seeded skill the repository stops shipping is withdrawn unless somebody 
 	await seedShippedSkills(paths, shipped);
 	assert.ok(await readdir(paths.skillsDir).then((names) => names.includes("dropped")), "both skills are seeded");
 
-	// The next release ships one of them.
 	await rm(join(shipped, "dropped"), { recursive: true });
 	await seedShippedSkills(paths, shipped);
 	const names = await readdir(paths.skillsDir);
 	assert.ok(names.includes("kept"), "the skill still shipped stays");
 	assert.ok(!names.includes("dropped"), "the withdrawn one goes, so the index cannot point at a manual for no tool");
 
-	// And the rule does not reach a copy the person wrote over.
 	await mkdir(join(shipped, "edited"), { recursive: true });
 	await writeFile(join(shipped, "edited", "SKILL.md"), "---\nname: edited\ndescription: Mine.\n---\n", "utf8");
 	await seedShippedSkills(paths, shipped);

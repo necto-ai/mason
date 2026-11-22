@@ -1,11 +1,3 @@
-/**
- * The model a bot runs is durable state, and a settings edit has to reach it.
- *
- * `pi.agent` keeps the conversation's model, and `harness.root()`'s `agent` option only seeds it when the conversation
- * is created. So the model `mason init` wrote into `common/settings.json` reached the first boot and no boot after it:
- * a live bot ran the old tag at the old window while `mason status` and `doctor` reported the new one. These are the
- * boots that prove the reconcile: one that moves the conversation, one that leaves it alone.
- */
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -31,7 +23,6 @@ function access(modelId: string): ResolvedModel {
 	return { models, ref: { provider: "faux", modelId }, faux: true };
 }
 
-/** One boot over a home that survives it: the sqlite file is what carries `pi.agent` to the next one. */
 async function boot(directory: string, modelId: string) {
 	const runtime = await openAgentRuntime(BACKGROUND_CONTEXT, {
 		dataDir: join(directory, "data"),
@@ -42,7 +33,6 @@ async function boot(directory: string, modelId: string) {
 		onReport: () => {},
 	});
 	const root = await runtime.conversation();
-	// The doc is a live overlay: it is read inside the commit and copied out, or the next commit settles it.
 	const stored = await root.commit(async (tx) => {
 		const model = (await tx.doc(AgentDoc, root.id)).model;
 		return model === undefined ? undefined : { provider: model.provider, modelId: model.modelId };
