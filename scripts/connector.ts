@@ -13,9 +13,9 @@ import {
 	listConnectorCredentials,
 	mintConnectorCredential,
 	revokeConnectorCredential,
-} from "../src/server/connectors.ts";
-import { housePaths } from "../src/server/house.ts";
-import { readIntegrations } from "../src/server/integrations.ts";
+} from "../packages/mason-agent/src/server/connectors.ts";
+import { housePaths } from "../packages/mason-agent/src/server/house.ts";
+import { readIntegrations } from "../packages/mason-agent/src/server/integrations.ts";
 
 const [command, ...args] = process.argv.slice(2);
 let house: ReturnType<typeof housePaths>;

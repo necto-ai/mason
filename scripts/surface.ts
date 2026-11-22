@@ -17,19 +17,23 @@ import {
 	ATTACHMENT_BYTES,
 	ATTACHMENT_LIMIT,
 	ATTACHMENT_TTL_MS,
-} from "../src/server/attachments.ts";
-import { CONNECTOR_PATH } from "../src/server/connector.ts";
+} from "../packages/mason-agent/src/server/attachments.ts";
+import { CONNECTOR_PATH } from "../packages/mason-agent/src/server/connector.ts";
 import {
 	CONNECTOR_CONTROL_LIMIT,
 	CONNECTOR_FIRE_LIMIT,
 	CONNECTOR_SUBMISSION_LIMIT,
 	FIRE_WINDOW_MS,
 	JSON_BODY_MAX_BYTES,
-} from "../src/server/limits.ts";
-import { BASE_EXTENSIONS, MCP_EXTENSION_NAME, PER_BOOT_EXTENSIONS } from "../src/server/runtime.ts";
+} from "../packages/mason-agent/src/server/limits.ts";
+import {
+	BASE_EXTENSIONS,
+	MCP_EXTENSION_NAME,
+	PER_BOOT_EXTENSIONS,
+} from "../packages/mason-agent/src/server/runtime.ts";
 
 export const SURFACE_PATH = "docs/SURFACE.md";
-export const SERVER_SOURCE = "src/server/main.ts";
+export const SERVER_SOURCE = "packages/mason-agent/src/server/main.ts";
 
 /** Every door, how it is opened, and why. A route in the code and not in this list is a route nobody decided about. */
 export interface Door {

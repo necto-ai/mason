@@ -11,8 +11,8 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import { after, describe, it } from "node:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { DAEMON_ENV_ALLOWED, daemonCommand, daemonEnv } from "../src/server/env.ts";
-import { ensureHouse, housePaths } from "../src/server/house.ts";
+import { DAEMON_ENV_ALLOWED, daemonCommand, daemonEnv } from "../packages/mason-agent/src/server/env.ts";
+import { ensureHouse, housePaths } from "../packages/mason-agent/src/server/house.ts";
 import {
 	CONNECTOR_FIRE_LIMIT,
 	createFireLimiter,
@@ -20,8 +20,8 @@ import {
 	JSON_BODY_MAX_BYTES,
 	parseJsonObject,
 	readBodyCapped,
-} from "../src/server/limits.ts";
-import { openAgentRuntime } from "../src/server/runtime.ts";
+} from "../packages/mason-agent/src/server/limits.ts";
+import { openAgentRuntime } from "../packages/mason-agent/src/server/runtime.ts";
 
 const directories = new Set<string>();
 after(async () => {

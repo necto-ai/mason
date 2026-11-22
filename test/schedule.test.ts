@@ -6,7 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { nextFireAt, parseSchedule, renderSchedule } from "../src/server/schedule.ts";
+import { nextFireAt, parseSchedule, renderSchedule } from "../packages/mason-agent/src/server/schedule.ts";
 
 const schedule = (value: unknown) => parseSchedule(value, "test");
 

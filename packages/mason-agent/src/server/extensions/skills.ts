@@ -34,7 +34,7 @@ import {
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 
 /** Where the skills mason ships live. Resolved from this module, not from the process cwd. */
-export const SHIPPED_SKILLS_DIR = join(import.meta.dirname, "../../../skills");
+export const SHIPPED_SKILLS_DIR = join(import.meta.dirname, "../../../../../skills");
 
 /** A directory that holds a `SKILL.md` is one skill, and is not scanned further. */
 const SKILL_FILE = "SKILL.md";

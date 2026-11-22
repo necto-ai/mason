@@ -4,7 +4,7 @@
  * The floor is mason's supported runtime — TypeScript from source, state in `node:sqlite` — and it can only be enforced
  * by code that runs on the version being refused. That is why the interesting test here is the second one: the check is
  * worthless if the module holding it grows an import, because ESM evaluates an import before the line that would have
- * printed the refusal. A future edit that adds `import { … } from "../src/…"` to `bin/mason.ts` would pass a review and
+ * printed the refusal. A future edit that adds `import { … } from "../packages/mason-agent/src/…"` to `bin/mason.ts` would pass a review and
  * silently turn every old-Node run back into `ERR_UNKNOWN_BUILTIN_MODULE`, so the shape is pinned, not described.
  */
 import assert from "node:assert/strict";

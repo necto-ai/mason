@@ -16,7 +16,7 @@ import type { Provider } from "@earendil-works/pi-ai";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import { AgentDoc } from "@earendil-works/pi-durable";
-import { openAgentRuntime, type ResolvedModel } from "../src/server/runtime.ts";
+import { openAgentRuntime, type ResolvedModel } from "../packages/mason-agent/src/server/runtime.ts";
 
 const directories = new Set<string>();
 

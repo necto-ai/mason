@@ -7,7 +7,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fauxSessionScript } from "../src/server/provider.ts";
+import { fauxSessionScript } from "../packages/mason-agent/src/server/provider.ts";
 
 /** The tool calls in one message, as `{name, arguments}`. */
 function calls(message: { content: unknown }): Array<{ name: string; arguments: unknown }> {

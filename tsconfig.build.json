@@ -9,5 +9,5 @@
 		"rewriteRelativeImportExtensions": true,
 		"paths": {}
 	},
-	"include": ["bin/**/*", "scripts/**/*.ts", "evals/run.ts", "evals/lib/**/*.ts", "src/**/*"]
+	"include": ["bin/**/*", "scripts/**/*.ts", "evals/run.ts", "evals/lib/**/*.ts", "packages/mason-agent/src/**/*"]
 }

@@ -1,5 +1,5 @@
 /**
- * `src/server/root.ts` — the directory above the home.
+ * `packages/mason-agent/src/server/root.ts` — the directory above the home.
  *
  * A bot is today's home, unchanged, one directory under the root; `common/` sits beside it and is never a bot. These
  * tests pin the two things every command depends on: what counts as a bot, and which bot a command is about — the root's
@@ -18,7 +18,7 @@ import {
 	refuseLegacyRoot,
 	resolveBot,
 	rootPath,
-} from "../src/server/root.ts";
+} from "../packages/mason-agent/src/server/root.ts";
 
 const directories = new Set<string>();
 after(async () => {

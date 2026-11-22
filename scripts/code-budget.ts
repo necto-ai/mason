@@ -7,8 +7,8 @@
  * point, raising one is a decision the pull request has to argue for.
  *
  * Three failures, and each names the area: code over its ceiling, an area in the manifest whose directory is gone, and
- * an area the manifest does not cover. The third matters as much as the others — a new `src/something/` that no ceiling
- * covers is code nobody is measuring while the table still says the code is measured.
+ * an area the manifest does not cover. The third matters as much as the others — a new `packages/something/src/` that no
+ * ceiling covers is code nobody is measuring while the table still says the code is measured.
  *
  * What counts is a line of code: not blank, not a comment, not a shebang, and never a test. Tests are the one place a
  * ceiling would be a reason not to write the test that proves a thing.
@@ -97,8 +97,8 @@ export function countArea(base: string, area: string): number {
 }
 
 /**
- * The areas the manifest must cover, found by walking rather than by listing: every directory directly under `src/`,
- * every package's `src/`, and the two tooling directories that are maintained code of their own.
+ * The areas the manifest must cover, found by walking rather than by listing: every package's `src/`, and the tooling
+ * directories that are maintained code of their own.
  */
 export function governedAreas(base: string): string[] {
 	const areas: string[] = [];
@@ -119,9 +119,6 @@ export function governedAreas(base: string): string[] {
 			}
 		}
 	}
-	for (const entry of children("src")) {
-		if (entry.isDirectory() && !SKIP.has(entry.name)) areas.push(`src/${entry.name}`);
-	}
 	return areas.sort();
 }
 
@@ -135,7 +132,7 @@ export function readManifest(text: string, from = MANIFEST_PATH): Manifest {
 	}
 	const ceilings = (parsed as { ceilings?: unknown } | null)?.ceilings;
 	if (typeof ceilings !== "object" || ceilings === null || Array.isArray(ceilings)) {
-		throw new Error(`${from} has no "ceilings" object: {"ceilings": {"src/server": 7000}}`);
+		throw new Error(`${from} has no "ceilings" object: {"ceilings": {"scripts": 2400}}`);
 	}
 	const checked: Record<string, number> = {};
 	for (const [area, ceiling] of Object.entries(ceilings)) {

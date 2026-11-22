@@ -28,13 +28,17 @@ import {
 	type McpTransport,
 } from "@earendil-works/pi-mcp";
 import { createInMemoryTransportPair } from "@earendil-works/pi-mcp/testing";
-import { housePaths } from "../../src/server/house.ts";
-import type { Integration } from "../../src/server/integrations.ts";
-import type { McpTransportFactory } from "../../src/server/mcp.ts";
-import { type AgentRuntime, openAgentRuntime, type ResolvedModel } from "../../src/server/runtime.ts";
+import { housePaths } from "../../packages/mason-agent/src/server/house.ts";
+import type { Integration } from "../../packages/mason-agent/src/server/integrations.ts";
+import type { McpTransportFactory } from "../../packages/mason-agent/src/server/mcp.ts";
+import {
+	type AgentRuntime,
+	openAgentRuntime,
+	type ResolvedModel,
+} from "../../packages/mason-agent/src/server/runtime.ts";
 
 /** The four tools a script uses to reach a server: the whole of what the registry carries about MCP. */
-export { MCP_TOOL as MCP } from "../../src/server/mcp.ts";
+export { MCP_TOOL as MCP } from "../../packages/mason-agent/src/server/mcp.ts";
 
 /** The key and the two words of the marker a tool declares its effect with. */
 export const APPROVAL_META_KEY = "dev.mason/approval";

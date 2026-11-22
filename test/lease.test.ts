@@ -12,7 +12,7 @@ import { chmod, mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/
 import { hostname, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { after, test } from "node:test";
-import { acquireWriteLease, leasePath, leaseRefusalText } from "../src/server/lease.ts";
+import { acquireWriteLease, leasePath, leaseRefusalText } from "../packages/mason-agent/src/server/lease.ts";
 
 const directories = new Set<string>();
 after(async () => {

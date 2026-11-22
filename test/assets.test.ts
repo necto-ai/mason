@@ -13,9 +13,9 @@ import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { Connection, LocalExecutionEnv, localDaemon } from "@earendil-works/pi-env";
-import { resolveTurnAssets } from "../src/server/assets.ts";
-import { AttachmentStore } from "../src/server/attachments.ts";
-import { daemonCommand } from "../src/server/env.ts";
+import { resolveTurnAssets } from "../packages/mason-agent/src/server/assets.ts";
+import { AttachmentStore } from "../packages/mason-agent/src/server/attachments.ts";
+import { daemonCommand } from "../packages/mason-agent/src/server/env.ts";
 import { connectConnector, connectorHome, serveConnector, until } from "./support/connector.ts";
 
 const directories = new Set<string>();

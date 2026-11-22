@@ -17,8 +17,8 @@ import { after, test } from "node:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
-import { housePaths } from "../src/server/house.ts";
-import { type AgentRuntime, openAgentRuntime, type ResolvedModel } from "../src/server/runtime.ts";
+import { housePaths } from "../packages/mason-agent/src/server/house.ts";
+import { type AgentRuntime, openAgentRuntime, type ResolvedModel } from "../packages/mason-agent/src/server/runtime.ts";
 
 const directories = new Set<string>();
 after(async () => {

@@ -30,12 +30,12 @@ import {
 import { MemoryStore } from "mason-connector/store/memory";
 import { type ConversationState, connectorHost, errorCodeOf, MasonPeer, type PeerRef } from "mason-protocol";
 import WebSocket from "ws";
-import { mintConnectorCredential } from "../../src/server/connectors.ts";
-import { type HousePaths, housePaths } from "../../src/server/house.ts";
-import type { RunningServer } from "../../src/server/main.ts";
-import { startServer } from "../../src/server/main.ts";
-import type { McpTransportFactory } from "../../src/server/mcp.ts";
-import type { ResolvedModel } from "../../src/server/runtime.ts";
+import { mintConnectorCredential } from "../../packages/mason-agent/src/server/connectors.ts";
+import { type HousePaths, housePaths } from "../../packages/mason-agent/src/server/house.ts";
+import type { RunningServer } from "../../packages/mason-agent/src/server/main.ts";
+import { startServer } from "../../packages/mason-agent/src/server/main.ts";
+import type { McpTransportFactory } from "../../packages/mason-agent/src/server/mcp.ts";
+import type { ResolvedModel } from "../../packages/mason-agent/src/server/runtime.ts";
 
 const directories = new Set<string>();
 after(async () => {

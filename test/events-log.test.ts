@@ -11,7 +11,7 @@ import { appendFile, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { EVENT_RETENTION_DAYS, type EventLine, EventLog } from "../src/server/events-log.ts";
+import { EVENT_RETENTION_DAYS, type EventLine, EventLog } from "../packages/mason-agent/src/server/events-log.ts";
 
 const directories = new Set<string>();
 after(async () => {

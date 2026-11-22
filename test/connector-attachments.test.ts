@@ -10,8 +10,8 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai/providers/faux";
 import { ERROR_CODE } from "mason-protocol";
-import { ATTACHMENT_BYTES, ATTACHMENT_TTL_MS } from "../src/server/attachments.ts";
-import { CONNECTOR_ENTRY_KIND } from "../src/shared/contract.ts";
+import { ATTACHMENT_BYTES, ATTACHMENT_TTL_MS } from "../packages/mason-agent/src/server/attachments.ts";
+import { CONNECTOR_ENTRY_KIND } from "../packages/mason-agent/src/shared/contract.ts";
 import { connectConnector, connectorHome, entriesOf, serveConnector, until } from "./support/connector.ts";
 
 const BYTES = new TextEncoder().encode("a photograph, allegedly");

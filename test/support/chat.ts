@@ -12,9 +12,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after } from "node:test";
 import type { FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
+import { type HousePaths, housePaths } from "../../packages/mason-agent/src/server/house.ts";
+import { type RunningServer, startServer } from "../../packages/mason-agent/src/server/main.ts";
 import { ensureConsole } from "../../scripts/chat.ts";
-import { type HousePaths, housePaths } from "../../src/server/house.ts";
-import { type RunningServer, startServer } from "../../src/server/main.ts";
 import { fauxAccess } from "./connector.ts";
 
 const directories = new Set<string>();

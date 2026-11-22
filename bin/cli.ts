@@ -20,7 +20,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 /** The subcommand → script map, written as .ts and closed: every unmapped noun is, deliberately, not a command. */
 const SCRIPTS: Readonly<Record<string, string>> = {
-	up: "../src/server/main.ts",
+	up: "../packages/mason-agent/src/server/main.ts",
 	init: "../scripts/init.ts",
 	new: "../scripts/new.ts",
 	doctor: "../scripts/doctor.ts",

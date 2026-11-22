@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { ConversationState } from "mason-protocol";
 import WebSocket from "ws";
-import { CONNECTOR_ENTRY_KIND, HOOK_ENTRY_KIND } from "../src/shared/contract.ts";
+import { CONNECTOR_ENTRY_KIND, HOOK_ENTRY_KIND } from "../packages/mason-agent/src/shared/contract.ts";
 import {
 	connectConnector,
 	connectorHome,

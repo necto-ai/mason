@@ -7,10 +7,10 @@
  * The model line follows the same precedence as the boot (`common.ts`), so the line cannot disagree with what a turn
  * would actually run. It never prints a key, because a status line ends up in a paste.
  */
-import { readPiSettingsModel, resolveModelChoice } from "../src/server/common.ts";
-import { housePaths } from "../src/server/house.ts";
-import { type Integration, readIntegrations } from "../src/server/integrations.ts";
-import { FAUX_MODEL } from "../src/server/runtime.ts";
+import { readPiSettingsModel, resolveModelChoice } from "../packages/mason-agent/src/server/common.ts";
+import { housePaths } from "../packages/mason-agent/src/server/house.ts";
+import { type Integration, readIntegrations } from "../packages/mason-agent/src/server/integrations.ts";
+import { FAUX_MODEL } from "../packages/mason-agent/src/server/runtime.ts";
 
 export function usage(): string {
 	return `usage: mason status

@@ -1,13 +1,15 @@
 /**
  * `npm run build`, the build the published package ships.
  *
- * The dev path stays source-from-types (`--experimental-strip-types src/server/main.ts`); this is the consumer's copy,
+ * The dev path stays source-from-types (`--experimental-strip-types packages/mason-agent/src/server/main.ts`); this is the
+ * consumer's copy,
  * compiled, because a published package's Node will not strip types inside `node_modules`. `tsc` writes the server, the
- * bin, the scripts and the evals into `dist/`, mirroring the checkout's layout (`dist/src/server/main.js`,
- * `dist/scripts/…`), so relative paths inside the code keep working and `npm test` never has to read a line of it.
+ * bin, the scripts, the evals and `packages/mason-agent/src` into `dist/`, mirroring the checkout's layout
+ * (`dist/packages/mason-agent/src/server/main.js`, `dist/scripts/…`), so relative paths inside the code keep working and
+ * `npm test` never has to read a line of it.
  *
  * A few things travel beside the compiled code, copied by this script rather than by tsc: the shipped skills, into
- * `dist/skills`, because `SHIPPED_SKILLS_DIR` reads them three directories up from the compiled module; the eval
+ * `dist/skills`, because `SHIPPED_SKILLS_DIR` reads them five directories up from the compiled module; the eval
  * scenarios, which `mason eval` reads as data; the deployment reference,
  * into `dist/docs/agent`, because `SHIPPED_DOCS_DIR` resolves that path from the compiled module and the prompt's
  * `docs` section is empty without it; and the workspace packages the server imports bare, vendored into
@@ -127,7 +129,7 @@ async function main(): Promise<void> {
 		}
 		console.log(`[build-runtime] vendored ${name} → ${join("dist", "node_modules", name)}`);
 	}
-	// The skills the boot seeds from, beside the code that seeds them: `SHIPPED_SKILLS_DIR` resolves three directories
+	// The skills the boot seeds from, beside the code that seeds them: `SHIPPED_SKILLS_DIR` resolves five directories
 	// up from the compiled module, which is `dist/` here and the checkout root in a dev tree. The eval scenarios are
 	// data for the same reason: `mason eval` reads them as JSON from where the compiled runner sits.
 	await rm(join(tools, "skills"), { recursive: true, force: true });

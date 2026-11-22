@@ -48,7 +48,7 @@ replaced rather than kept:
   an integration's behalf; `/api/events/<name>` and its trigger secret are gone, and an entry that still names a
   `trigger` refuses the boot.
 - **"`connector` retires as a noun" is reversed.** Connector is the noun again, and an integration entry may carry a
-  `connector` grant beside its MCP endpoint (`src/server/connectors.ts`). This ADR's third bullet is history, not policy.
+  `connector` grant beside its MCP endpoint (`packages/mason-agent/src/server/connectors.ts`). This ADR's third bullet is history, not policy.
 - **What survives, unchanged.** An integration is still a separate process; tools are still MCP over Streamable HTTP with
   one generic client in the server and no per-integration TypeScript; the enabled set is still resolved at boot, so a
   container restart no longer re-prices the prompt but a config change is still a restart; the integration still owns

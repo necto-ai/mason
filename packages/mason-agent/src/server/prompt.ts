@@ -93,7 +93,7 @@ const PROFILE_MAX_CHARS = 4_800;
 /**
  * What a turn of real work owes the next one, in the prompt because the counter that enforces it fires at the end.
  *
- * The gate states the same rule once, at the moment it binds (`REFLECTION_ASK` in `src/shared/contract.ts`); a rule the
+ * The gate states the same rule once, at the moment it binds (`REFLECTION_ASK` in `packages/mason-agent/src/shared/contract.ts`); a rule the
  * model has read for the whole turn is still a rule it can decide about, so the prompt is where the shape of the memory
  * lives and the continuation is where it is asked for. The order inside the paragraph is the measurement's: the profile
  * and the log are written often, a skill rarely, and a description stays under 60 characters because the index is

@@ -12,9 +12,9 @@ statement about the prompt and the harness, which is what these files exist to p
 
 ## What is real and what is stubbed
 
-Real: the production prompt registry (`src/server/prompt.ts`), the harness (`openAgentRuntime`), the extension set a
+Real: the production prompt registry (`packages/mason-agent/src/server/prompt.ts`), the harness (`openAgentRuntime`), the extension set a
 scenario runs with (the prompt and the two delivery gates), the projection that decides what a reader sees
-(`src/server/projection.ts`), and the model. Every turn is a real model call, plus the calls its tool steps need.
+(`packages/mason-agent/src/server/projection.ts`), and the model. Every turn is a real model call, plus the calls its tool steps need.
 
 Stubbed: `bash`, `read`, `write` and `edit` keep their production names, descriptions and parameters, and answer from
 the scenario instead of from a machine (`lib/stubs.ts`). No `pi-env` daemon runs. `edit` reports success and changes

@@ -25,11 +25,15 @@ import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { type ConnectorStore, createUserClient, nodeWebSocketLink, type StoreEntry } from "mason-connector";
 import { CONTROL_OPS, type ControlOp } from "mason-protocol";
-import { writeFileAtomic } from "../src/server/atomic.ts";
-import type { ConnectorGrant } from "../src/server/connectors.ts";
-import { mintConnectorCredential } from "../src/server/connectors.ts";
-import { type HousePaths, housePaths } from "../src/server/house.ts";
-import { readIntegrations, secondUserGrantNote, writeIntegration } from "../src/server/integrations.ts";
+import { writeFileAtomic } from "../packages/mason-agent/src/server/atomic.ts";
+import type { ConnectorGrant } from "../packages/mason-agent/src/server/connectors.ts";
+import { mintConnectorCredential } from "../packages/mason-agent/src/server/connectors.ts";
+import { type HousePaths, housePaths } from "../packages/mason-agent/src/server/house.ts";
+import {
+	readIntegrations,
+	secondUserGrantNote,
+	writeIntegration,
+} from "../packages/mason-agent/src/server/integrations.ts";
 
 /** The built-in entry's name. It is also the name the connector says in its hello, and mason refuses a mismatch. */
 export const CONSOLE = "console";

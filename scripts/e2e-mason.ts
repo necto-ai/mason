@@ -33,12 +33,12 @@ import {
 	fauxText,
 	fauxToolCall,
 } from "@earendil-works/pi-ai/providers/faux";
-import { mintConnectorCredential } from "../src/server/connectors.ts";
-import { housePaths } from "../src/server/house.ts";
-import { integrationSummaries } from "../src/server/integration-status.ts";
-import { currentIntegrations } from "../src/server/integrations.ts";
-import { startServer } from "../src/server/main.ts";
-import type { ResolvedModel } from "../src/server/runtime.ts";
+import { mintConnectorCredential } from "../packages/mason-agent/src/server/connectors.ts";
+import { housePaths } from "../packages/mason-agent/src/server/house.ts";
+import { integrationSummaries } from "../packages/mason-agent/src/server/integration-status.ts";
+import { currentIntegrations } from "../packages/mason-agent/src/server/integrations.ts";
+import { startServer } from "../packages/mason-agent/src/server/main.ts";
+import type { ResolvedModel } from "../packages/mason-agent/src/server/runtime.ts";
 
 /** One assistant message: words, or a tool call. Anything else is a script the provider cannot play. */
 type Turn = { readonly text: string } | { readonly tool: string; readonly args: JsonObject };

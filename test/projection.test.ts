@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ConversationView } from "@earendil-works/pi-durable";
 import type { TranscriptItem as WireRow } from "mason-protocol";
-import { foldTranscript, projectQueued, projectTranscript } from "../src/server/projection.ts";
+import { foldTranscript, projectQueued, projectTranscript } from "../packages/mason-agent/src/server/projection.ts";
 import {
 	ASSET_ENTRY_KIND,
 	CONNECTOR_ENTRY_KIND,
@@ -23,7 +23,7 @@ import {
 	REPLY_ENTRY_KIND,
 	splitAuthor,
 	type TranscriptItem,
-} from "../src/shared/contract.ts";
+} from "../packages/mason-agent/src/shared/contract.ts";
 
 type Entry = Record<string, unknown>;
 
@@ -67,7 +67,7 @@ function replyEntry(id: number, deliveryId: string, text: string, extra: Record<
 
 describe("the transcript the client is sent", () => {
 	it("the transcript row is the wire row", () => {
-		// The compile-time assertion above is the whole test: `src/shared/contract.ts` and `packages/protocol` spell the
+		// The compile-time assertion above is the whole test: `packages/mason-agent/src/shared/contract.ts` and `packages/protocol` spell the
 		// row once, and a field added on one side and not the other fails `npm run typecheck` here.
 		assert.equal(sameSpelling, true, "the projection's row and the wire's schema are the same shape");
 	});

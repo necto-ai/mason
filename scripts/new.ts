@@ -13,12 +13,19 @@
  */
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import { commonReady } from "../src/server/common.ts";
-import { mintConnectorCredential } from "../src/server/connectors.ts";
-import { doctorExitCode, formatCheck, runDoctor } from "../src/server/doctor.ts";
-import { botPaths, ensureHouse, ensureRepository } from "../src/server/house.ts";
-import { DEFAULT_SOUL } from "../src/server/prompt.ts";
-import { BOT_NAME, botHome, COMMON, readRoot, refuseHomeEnv, rootPath } from "../src/server/root.ts";
+import { commonReady } from "../packages/mason-agent/src/server/common.ts";
+import { mintConnectorCredential } from "../packages/mason-agent/src/server/connectors.ts";
+import { doctorExitCode, formatCheck, runDoctor } from "../packages/mason-agent/src/server/doctor.ts";
+import { botPaths, ensureHouse, ensureRepository } from "../packages/mason-agent/src/server/house.ts";
+import { DEFAULT_SOUL } from "../packages/mason-agent/src/server/prompt.ts";
+import {
+	BOT_NAME,
+	botHome,
+	COMMON,
+	readRoot,
+	refuseHomeEnv,
+	rootPath,
+} from "../packages/mason-agent/src/server/root.ts";
 import { CONSOLE, ensureConsole } from "./chat.ts";
 
 export interface NewArgs {

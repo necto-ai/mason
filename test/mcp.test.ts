@@ -14,11 +14,11 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { housePaths } from "../src/server/house.ts";
-import { integrationStatus, integrationSummaries } from "../src/server/integration-status.ts";
-import { currentIntegrations } from "../src/server/integrations.ts";
-import { startServer } from "../src/server/main.ts";
-import { type McpTransportFactory, openMcpCatalog } from "../src/server/mcp.ts";
+import { housePaths } from "../packages/mason-agent/src/server/house.ts";
+import { integrationStatus, integrationSummaries } from "../packages/mason-agent/src/server/integration-status.ts";
+import { currentIntegrations } from "../packages/mason-agent/src/server/integrations.ts";
+import { startServer } from "../packages/mason-agent/src/server/main.ts";
+import { type McpTransportFactory, openMcpCatalog } from "../packages/mason-agent/src/server/mcp.ts";
 import {
 	boot,
 	callable,

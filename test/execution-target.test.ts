@@ -13,8 +13,8 @@ import { after, describe, it } from "node:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai/providers/faux";
-import type { ExecutionTargetManager, ExecutionTargetState } from "../src/server/env.ts";
-import { type AgentRuntime, openAgentRuntime, type ResolvedModel } from "../src/server/runtime.ts";
+import type { ExecutionTargetManager, ExecutionTargetState } from "../packages/mason-agent/src/server/env.ts";
+import { type AgentRuntime, openAgentRuntime, type ResolvedModel } from "../packages/mason-agent/src/server/runtime.ts";
 
 const directories = new Set<string>();
 after(async () => {

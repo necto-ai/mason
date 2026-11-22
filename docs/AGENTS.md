@@ -27,7 +27,7 @@ which is current. This page is the map of which tier a sentence belongs to, and 
 - **One paragraph, one block.** Hard-wrapped at about 115 columns, a blank line above and below, never a line break
   inside an inline `code span`: a break there renders as a space, which reads as a typo.
 - **Name the mechanism, not just the file**, when the file may move: "the projection" survives a rename,
-  `src/server/replies.ts` does not. Give the path once, then the name.
+  `packages/mason-agent/src/server/replies.ts` does not. Give the path once, then the name.
 - **Link, do not restate.** A second copy of a rule is a rule that will disagree with the first.
 - **Plain sentences.** No marketing, and an em dash is punctuation, not a tic.
 

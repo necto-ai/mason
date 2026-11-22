@@ -8,7 +8,7 @@
  * `exit <name> <ms>`. The parent reads the intervals and asserts that no two overlap.
  */
 import { appendFile } from "node:fs/promises";
-import { withStoreLock } from "../../src/server/atomic.ts";
+import { withStoreLock } from "../../packages/mason-agent/src/server/atomic.ts";
 
 const [path = "", name = "", hold = "0", log = ""] = process.argv.slice(2);
 

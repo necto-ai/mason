@@ -20,7 +20,7 @@
 		"packages/*"
 	],
 	"scripts": {
-		"dev": "node --experimental-strip-types src/server/main.ts",
+		"dev": "node --experimental-strip-types packages/mason-agent/src/server/main.ts",
 		"dev:stack": "node --experimental-strip-types scripts/dev-stack.ts",
 		"init": "node --experimental-strip-types scripts/init.ts",
 		"new": "node --experimental-strip-types scripts/new.ts",

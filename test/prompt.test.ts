@@ -11,16 +11,16 @@ import { after, test } from "node:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { PromptSection } from "@earendil-works/pi-durable";
 import { Connection, LocalExecutionEnv, localDaemon } from "@earendil-works/pi-env";
-import { daemonCommand } from "../src/server/env.ts";
-import { CODEMODE_SECTION } from "../src/server/extensions/codemode.ts";
-import { discoverSkills, renderSkills } from "../src/server/extensions/skills.ts";
-import { ensureHouse, housePaths } from "../src/server/house.ts";
+import { daemonCommand } from "../packages/mason-agent/src/server/env.ts";
+import { CODEMODE_SECTION } from "../packages/mason-agent/src/server/extensions/codemode.ts";
+import { discoverSkills, renderSkills } from "../packages/mason-agent/src/server/extensions/skills.ts";
+import { ensureHouse, housePaths } from "../packages/mason-agent/src/server/house.ts";
 import {
 	type Integration,
 	type IntegrationSurface,
 	setIntegrationSurface,
 	setIntegrations,
-} from "../src/server/integrations.ts";
+} from "../packages/mason-agent/src/server/integrations.ts";
 import {
 	DEFAULT_SOUL,
 	INTEGRATIONS_POINTER,
@@ -30,8 +30,8 @@ import {
 	REFLECTION_RULE,
 	TONE,
 	WAKE_RULE,
-} from "../src/server/prompt.ts";
-import { BASE_EXTENSIONS } from "../src/server/runtime.ts";
+} from "../packages/mason-agent/src/server/prompt.ts";
+import { BASE_EXTENSIONS } from "../packages/mason-agent/src/server/runtime.ts";
 
 const directories = new Set<string>();
 

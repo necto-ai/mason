@@ -12,9 +12,9 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai/providers/faux";
-import { mintConnectorCredential } from "../src/server/connectors.ts";
-import { housePaths } from "../src/server/house.ts";
-import { projectTranscript } from "../src/server/projection.ts";
+import { mintConnectorCredential } from "../packages/mason-agent/src/server/connectors.ts";
+import { housePaths } from "../packages/mason-agent/src/server/house.ts";
+import { projectTranscript } from "../packages/mason-agent/src/server/projection.ts";
 import { connectEventClient, connectorHome, serveConnector, temporaryDirectory, until } from "./support/connector.ts";
 import { fakeServer, SEARCH_TOOL } from "./support/fake-mcp.ts";
 

@@ -33,10 +33,15 @@ import {
 	type SettledSubmissionRecord,
 } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
-import { projectTranscript } from "../src/server/projection.ts";
-import { isInputEntry, turnOriginOfEntry } from "../src/server/replies.ts";
-import { type AgentRuntime, openAgentRuntime, type ResolvedModel } from "../src/server/runtime.ts";
-import { DELIVERY_REMINDER, isDeliveryReminder, isReflectionAsk, REFLECTION_ASK } from "../src/shared/contract.ts";
+import { projectTranscript } from "../packages/mason-agent/src/server/projection.ts";
+import { isInputEntry, turnOriginOfEntry } from "../packages/mason-agent/src/server/replies.ts";
+import { type AgentRuntime, openAgentRuntime, type ResolvedModel } from "../packages/mason-agent/src/server/runtime.ts";
+import {
+	DELIVERY_REMINDER,
+	isDeliveryReminder,
+	isReflectionAsk,
+	REFLECTION_ASK,
+} from "../packages/mason-agent/src/shared/contract.ts";
 
 const directories = new Set<string>();
 after(async () => {
@@ -489,7 +494,7 @@ test("a fire that named its conversation keeps its origin through the reflection
 	];
 	const script = recorder([...probes("a"), said("The migration is done."), said("Kept one line about the standup.")]);
 	const telegram = { enabled: true, connector: { user: { owner: "8811" } } };
-	const { setIntegrations } = await import("../src/server/integrations.ts");
+	const { setIntegrations } = await import("../packages/mason-agent/src/server/integrations.ts");
 	await seedRoutine(directory);
 	const { settled, entries, transcript } = await runTurn(directory, script, [keeper(kept)], async (runtime) => {
 		setIntegrations({ telegram: telegram as never });
@@ -533,7 +538,7 @@ for (const note of [
 		const directory = await temporary();
 		const script = recorder([call("writeWorkingNote", {}, "note"), said("The migration is done.")]);
 		const telegram = { enabled: true, connector: { user: { owner: "8811" } } };
-		const { setIntegrations } = await import("../src/server/integrations.ts");
+		const { setIntegrations } = await import("../packages/mason-agent/src/server/integrations.ts");
 		await seedRoutine(directory);
 		const { settled, entries, transcript } = await runTurn(
 			directory,

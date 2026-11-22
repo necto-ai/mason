@@ -15,8 +15,8 @@ import { after, test } from "node:test";
 import { promisify } from "node:util";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { Connection, LocalExecutionEnv, localDaemon } from "@earendil-works/pi-env";
-import { daemonCommand } from "../src/server/env.ts";
-import { discoverSkills, SHIPPED_SKILLS_DIR } from "../src/server/extensions/skills.ts";
+import { daemonCommand } from "../packages/mason-agent/src/server/env.ts";
+import { discoverSkills, SHIPPED_SKILLS_DIR } from "../packages/mason-agent/src/server/extensions/skills.ts";
 import {
 	capText,
 	currentHouse,
@@ -26,7 +26,7 @@ import {
 	housePaths,
 	readHouseFile,
 	seedShippedSkills,
-} from "../src/server/house.ts";
+} from "../packages/mason-agent/src/server/house.ts";
 
 const run = promisify(execFile);
 

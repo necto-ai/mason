@@ -1,5 +1,5 @@
 /**
- * `src/server/atomic.ts` — the one writer of the service half's files.
+ * `packages/mason-agent/src/server/atomic.ts` — the one writer of the service half's files.
  *
  * What is pinned is the promise a reader relies on: a file is replaced whole, or not at all, and nothing outside the owner
  * can read it. The concurrency case is the one that cost a real bug: two writes from one process to one path are two
@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { writeFileAtomic, writeTextAtomic } from "../src/server/atomic.ts";
+import { writeFileAtomic, writeTextAtomic } from "../packages/mason-agent/src/server/atomic.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 

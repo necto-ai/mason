@@ -1,5 +1,5 @@
 /**
- * `src/server/common.ts` — the store every bot under a root shares.
+ * `packages/mason-agent/src/server/common.ts` — the store every bot under a root shares.
  *
  * Three files, three disciplines, and each one is tested by the failure it exists to prevent: settings keep every key
  * mason does not know and never replace a file nobody could read; auth is strict about shape and survives two writers at
@@ -24,8 +24,8 @@ import {
 	readCommonSettings,
 	resolveModelChoice,
 	writeCommonStore,
-} from "../src/server/common.ts";
-import { botPaths } from "../src/server/house.ts";
+} from "../packages/mason-agent/src/server/common.ts";
+import { botPaths } from "../packages/mason-agent/src/server/house.ts";
 
 const directories = new Set<string>();
 after(async () => {

@@ -15,16 +15,16 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { ConversationView } from "@earendil-works/pi-durable";
 import { AgentDoc } from "@earendil-works/pi-durable";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
-import { Delivery } from "../src/server/extensions/delivery.ts";
-import { projectTranscript } from "../src/server/projection.ts";
-import { Prompt } from "../src/server/prompt.ts";
+import { Delivery } from "../packages/mason-agent/src/server/extensions/delivery.ts";
+import { projectTranscript } from "../packages/mason-agent/src/server/projection.ts";
+import { Prompt } from "../packages/mason-agent/src/server/prompt.ts";
 import {
 	type AgentRuntime,
 	BASE_EXTENSIONS,
 	openAgentRuntime,
 	unconditionalExtensionNames,
-} from "../src/server/runtime.ts";
-import { DELIVERY_REMINDER, REPLY_ENTRY_KIND } from "../src/shared/contract.ts";
+} from "../packages/mason-agent/src/server/runtime.ts";
+import { DELIVERY_REMINDER, REPLY_ENTRY_KIND } from "../packages/mason-agent/src/shared/contract.ts";
 
 /**
  * Every extension a boot installs unconditionally, in order: the base list, then the ones `openAgentRuntime` builds per

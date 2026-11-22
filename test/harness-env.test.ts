@@ -14,14 +14,14 @@ import type { JsonObject } from "@earendil-works/pi-ai";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { defineExtension, section, ToolResultEntry } from "@earendil-works/pi-durable";
-import { currentHouse } from "../src/server/house.ts";
-import { projectTranscript } from "../src/server/projection.ts";
+import { currentHouse } from "../packages/mason-agent/src/server/house.ts";
+import { projectTranscript } from "../packages/mason-agent/src/server/projection.ts";
 import {
 	type AgentRuntime,
 	type OpenAgentRuntimeOptions,
 	openAgentRuntime,
 	type ResolvedModel,
-} from "../src/server/runtime.ts";
+} from "../packages/mason-agent/src/server/runtime.ts";
 
 const directories = new Set<string>();
 after(async () => {

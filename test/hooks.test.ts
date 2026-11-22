@@ -29,10 +29,10 @@ import {
 	parseEvents,
 	routineMarker,
 	scheduledRequestId,
-} from "../src/server/hooks.ts";
-import type { AgentRuntime } from "../src/server/runtime.ts";
-import { openAgentRuntime } from "../src/server/runtime.ts";
-import { HOOK_ENTRY_KIND } from "../src/shared/contract.ts";
+} from "../packages/mason-agent/src/server/hooks.ts";
+import type { AgentRuntime } from "../packages/mason-agent/src/server/runtime.ts";
+import { openAgentRuntime } from "../packages/mason-agent/src/server/runtime.ts";
+import { HOOK_ENTRY_KIND } from "../packages/mason-agent/src/shared/contract.ts";
 
 /** A clock the test moves by hand: fire identity is about time, so time is an input here, not a wait. */
 interface TestClock {
@@ -746,7 +746,7 @@ describe("agent/events.json", () => {
  */
 describe("the tool a hook's turn answers with", () => {
 	it("names reply, and no vendor's tool, in the supervisor's instruction", async () => {
-		const { RETRY_HOOK } = await import("../src/server/run-retry.ts");
+		const { RETRY_HOOK } = await import("../packages/mason-agent/src/server/run-retry.ts");
 		assert.doesNotMatch(RETRY_HOOK.promptTemplate, /mcp__/);
 		assert.doesNotMatch(RETRY_HOOK.promptTemplate, /send_file|send_message/);
 		assert.match(RETRY_HOOK.promptTemplate, /still open/);

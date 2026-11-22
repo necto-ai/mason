@@ -4,7 +4,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ConversationView } from "@earendil-works/pi-durable";
-import { planRunRetry, RunRetrySupervisor, readRunOutcome, retryOrigin } from "../src/server/run-retry.ts";
+import {
+	planRunRetry,
+	RunRetrySupervisor,
+	readRunOutcome,
+	retryOrigin,
+} from "../packages/mason-agent/src/server/run-retry.ts";
 
 /**
  * A view with nothing but the entries a test cares about. `busy` decides whether the run is still going, and a view whose

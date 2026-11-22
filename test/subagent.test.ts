@@ -32,11 +32,11 @@ import {
 	LiveDoc,
 	type LiveState,
 } from "@earendil-works/pi-durable";
-import type { RoleMap } from "../src/server/common.ts";
-import { TargetDoc } from "../src/server/env.ts";
-import { SUBAGENT_TOOL, SUBAGENT_TURNS } from "../src/server/extensions/subagent.ts";
-import { acquireWriteLease } from "../src/server/lease.ts";
-import { type AgentRuntime, openAgentRuntime, type ResolvedModel } from "../src/server/runtime.ts";
+import type { RoleMap } from "../packages/mason-agent/src/server/common.ts";
+import { TargetDoc } from "../packages/mason-agent/src/server/env.ts";
+import { SUBAGENT_TOOL, SUBAGENT_TURNS } from "../packages/mason-agent/src/server/extensions/subagent.ts";
+import { acquireWriteLease } from "../packages/mason-agent/src/server/lease.ts";
+import { type AgentRuntime, openAgentRuntime, type ResolvedModel } from "../packages/mason-agent/src/server/runtime.ts";
 
 const directories = new Set<string>();
 after(async () => {

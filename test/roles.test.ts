@@ -17,9 +17,9 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { AgentDoc, type ConversationId } from "@earendil-works/pi-durable";
-import { commonPaths, type RoleMap, roleMapOf } from "../src/server/common.ts";
-import { type AgentRuntime, openAgentRuntime } from "../src/server/runtime.ts";
-import { roleLine, statusLine } from "../src/server/status.ts";
+import { commonPaths, type RoleMap, roleMapOf } from "../packages/mason-agent/src/server/common.ts";
+import { type AgentRuntime, openAgentRuntime } from "../packages/mason-agent/src/server/runtime.ts";
+import { roleLine, statusLine } from "../packages/mason-agent/src/server/status.ts";
 
 const directories = new Set<string>();
 after(async () => {

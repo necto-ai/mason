@@ -11,11 +11,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
+import { commonPaths, writeCommonStore } from "../packages/mason-agent/src/server/common.ts";
+import { housePaths } from "../packages/mason-agent/src/server/house.ts";
+import { readIntegrations } from "../packages/mason-agent/src/server/integrations.ts";
+import { readRoot } from "../packages/mason-agent/src/server/root.ts";
 import { runNew } from "../scripts/new.ts";
-import { commonPaths, writeCommonStore } from "../src/server/common.ts";
-import { housePaths } from "../src/server/house.ts";
-import { readIntegrations } from "../src/server/integrations.ts";
-import { readRoot } from "../src/server/root.ts";
 
 const directories = new Set<string>();
 const previousPort = process.env.PORT;

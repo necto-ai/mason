@@ -22,9 +22,14 @@ import {
 	commonReady,
 	readCommonRuntime,
 	writeCommonStore,
-} from "../src/server/common.ts";
-import { openProviders, type ProviderAccess, providerIds, verifyCompletion } from "../src/server/provider.ts";
-import { readRoot, refuseHomeEnv, rootPath } from "../src/server/root.ts";
+} from "../packages/mason-agent/src/server/common.ts";
+import {
+	openProviders,
+	type ProviderAccess,
+	providerIds,
+	verifyCompletion,
+} from "../packages/mason-agent/src/server/provider.ts";
+import { readRoot, refuseHomeEnv, rootPath } from "../packages/mason-agent/src/server/root.ts";
 
 export interface InitArgs {
 	readonly provider?: string;

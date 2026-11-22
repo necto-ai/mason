@@ -30,9 +30,9 @@ import { createUserClient, nodeWebSocketLink } from "mason-connector";
 import { MemoryStore } from "mason-connector/store/memory";
 import type { ConversationState } from "mason-protocol";
 import WebSocket from "ws";
-import { mintConnectorCredential } from "../src/server/connectors.ts";
-import { startServer } from "../src/server/main.ts";
-import type { ResolvedModel } from "../src/server/runtime.ts";
+import { mintConnectorCredential } from "../packages/mason-agent/src/server/connectors.ts";
+import { startServer } from "../packages/mason-agent/src/server/main.ts";
+import type { ResolvedModel } from "../packages/mason-agent/src/server/runtime.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");

@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { createServer, type Server } from "node:net";
 import { after, describe, it } from "node:test";
 import * as undici from "undici";
-import { installEnvHttpProxy, proxyForLog } from "../src/server/http-proxy.ts";
+import { installEnvHttpProxy, proxyForLog } from "../packages/mason-agent/src/server/http-proxy.ts";
 
 const servers = new Set<Server>();
 after(async () => {

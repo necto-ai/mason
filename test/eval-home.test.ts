@@ -16,8 +16,8 @@ import { after, test } from "node:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { PromptSection } from "@earendil-works/pi-durable";
 import { seedHome } from "../evals/lib/runner.ts";
-import { ensureHouse, housePaths } from "../src/server/house.ts";
-import { DEFAULT_SOUL, PROMPT_SECTIONS } from "../src/server/prompt.ts";
+import { ensureHouse, housePaths } from "../packages/mason-agent/src/server/house.ts";
+import { DEFAULT_SOUL, PROMPT_SECTIONS } from "../packages/mason-agent/src/server/prompt.ts";
 
 const directories = new Set<string>();
 

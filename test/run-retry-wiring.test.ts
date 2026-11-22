@@ -28,12 +28,12 @@ import {
 	fauxText,
 } from "@earendil-works/pi-ai/providers/faux";
 import type { Conversation } from "@earendil-works/pi-durable";
-import { type HousePaths, housePaths } from "../src/server/house.ts";
-import { type RunningServer, startServer } from "../src/server/main.ts";
-import { projectTranscript } from "../src/server/projection.ts";
-import { RETRY_HOOK, RETRY_HOOK_ID } from "../src/server/run-retry.ts";
-import type { AgentRuntime, ResolvedModel } from "../src/server/runtime.ts";
-import { HOOK_ENTRY_KIND } from "../src/shared/contract.ts";
+import { type HousePaths, housePaths } from "../packages/mason-agent/src/server/house.ts";
+import { type RunningServer, startServer } from "../packages/mason-agent/src/server/main.ts";
+import { projectTranscript } from "../packages/mason-agent/src/server/projection.ts";
+import { RETRY_HOOK, RETRY_HOOK_ID } from "../packages/mason-agent/src/server/run-retry.ts";
+import type { AgentRuntime, ResolvedModel } from "../packages/mason-agent/src/server/runtime.ts";
+import { HOOK_ENTRY_KIND } from "../packages/mason-agent/src/shared/contract.ts";
 
 const directories = new Set<string>();
 after(async () => {

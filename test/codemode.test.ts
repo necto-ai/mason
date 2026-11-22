@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { readdirSync } from "node:fs";
 import { describe, it } from "node:test";
 import type { McpTransport } from "@earendil-works/pi-mcp";
-import { createCodemode } from "../src/server/extensions/codemode.ts";
+import { createCodemode } from "../packages/mason-agent/src/server/extensions/codemode.ts";
 import {
 	boot,
 	declared,

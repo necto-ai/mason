@@ -10,10 +10,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ConversationView } from "@earendil-works/pi-durable";
 import type { ControlOp } from "mason-protocol";
-import type { RoleMap } from "../src/server/common.ts";
-import type { IntegrationSummary } from "../src/server/integration-status.ts";
-import { type CommandTarget, runCommand } from "../src/server/main.ts";
-import { roleLine, statusLine } from "../src/server/status.ts";
+import type { RoleMap } from "../packages/mason-agent/src/server/common.ts";
+import type { IntegrationSummary } from "../packages/mason-agent/src/server/integration-status.ts";
+import { type CommandTarget, runCommand } from "../packages/mason-agent/src/server/main.ts";
+import { roleLine, statusLine } from "../packages/mason-agent/src/server/status.ts";
 
 /** Two roles, one model each, so a line that mixed them up would read wrong. */
 const ROLES: RoleMap = {

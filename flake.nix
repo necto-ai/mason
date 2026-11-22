@@ -34,7 +34,8 @@
             npmDepsHash = "sha256-jTRCOunpmRb7BJgsGfFbmgUr96gQDLwNWfZg1eA+fjk=";
 
             # The shipped layout is `dist/`, and `npm run build` is what writes it: tsc over `bin/`, `scripts/`,
-            # `src/` and `evals/`, then the assets and the vendored workspace packages that the compiled imports name.
+            # `packages/mason-agent/src/` and `evals/`, then the assets and the vendored workspace packages that the compiled
+            # imports name.
             npmBuildScript = "build";
 
             # `pi-env` ships prebuilt daemons: they are dynamically linked and must resolve on NixOS, where there is no

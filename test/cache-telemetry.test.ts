@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ConversationView } from "@earendil-works/pi-durable";
-import { cacheLine, createCacheReporter, usageOf, usageSince } from "../src/server/status.ts";
+import { cacheLine, createCacheReporter, usageOf, usageSince } from "../packages/mason-agent/src/server/status.ts";
 
 /** A view whose `pi.usage` ledger is exactly what the test passes, as the durable layer commits it. */
 function viewOf(ledger: unknown): ConversationView {

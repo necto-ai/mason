@@ -13,7 +13,11 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
-import { assertPerBootExtensions, MCP_EXTENSION_NAME, PER_BOOT_EXTENSIONS } from "../src/server/runtime.ts";
+import {
+	assertPerBootExtensions,
+	MCP_EXTENSION_NAME,
+	PER_BOOT_EXTENSIONS,
+} from "../packages/mason-agent/src/server/runtime.ts";
 
 const root = new URL("../", import.meta.url).pathname;
 

@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { after, describe, it } from "node:test";
 import { diffRevisions, type Op } from "@earendil-works/chord/delta";
 import type { ConversationView } from "@earendil-works/pi-durable";
-import { createReadModel } from "../src/server/read-model.ts";
+import { createReadModel } from "../packages/mason-agent/src/server/read-model.ts";
 
 type Entry = Record<string, unknown>;
 

@@ -7,7 +7,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { entryFor, entryKindFor, whenBusyFor } from "../src/server/admission.ts";
+import { entryFor, entryKindFor, whenBusyFor } from "../packages/mason-agent/src/server/admission.ts";
 
 describe("an input's origin", () => {
 	it("maps an origin to the entry kind pi-durable places", () => {

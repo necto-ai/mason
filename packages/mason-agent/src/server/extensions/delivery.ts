@@ -2,7 +2,7 @@
  * The two gates over a turn's ending: did the reader hear anything, and did the work leave something behind.
  *
  * A turn's text is the message. There is no tool to call and no entry to commit: every assistant generation's text is
- * projected into the transcript as one row (`src/server/projection.ts`), so what the model writes reaches the reader
+ * projected into the transcript as one row (`packages/mason-agent/src/server/projection.ts`), so what the model writes reaches the reader
  * because it was written, not because a call was made. That removes the failure #199 and #200 recorded — the answer was
  * a tool call, and a missed or misrouted call dropped it — but it leaves
  * one thing for code to hold: a submission turn must not end with silence.

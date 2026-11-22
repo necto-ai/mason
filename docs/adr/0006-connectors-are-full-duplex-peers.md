@@ -28,7 +28,7 @@ type.
 
 ## Decision
 
-1. **`send_to_user` is removed as a mason-owned channel.** A delivery is the origin connector's reply. `src/server/extensions/delivery.ts` keeps exactly two jobs, both about the *turn* rather than the medium: refusing a nested delivery, and never replaying one after a restart.
+1. **`send_to_user` is removed as a mason-owned channel.** A delivery is the origin connector's reply. `packages/mason-agent/src/server/extensions/delivery.ts` keeps exactly two jobs, both about the *turn* rather than the medium: refusing a nested delivery, and never replaying one after a restart.
 
 2. **A turn always knows its origin, and the reply is routed there.** Mason keeps one tool the model calls — `reply` — because a prompt must never name a vendor's tool. It commits an `app.reply` entry, and the outbox sends it to the connector that carried the turn's words.
 
@@ -84,8 +84,8 @@ team channel and the second would be the same person notified twice in two apps 
 
 ## Amendment, 2026-11-02: what shipped, and where it differs
 
-`#101` built the server half of this decision (`src/server/connector.ts`, `src/server/connectors.ts`,
-`src/server/replies.ts`, `docs/SPEC.md` §4.1d). Three things are as proposed and worth naming because they are the load
+`#101` built the server half of this decision (`packages/mason-agent/src/server/connector.ts`, `packages/mason-agent/src/server/connectors.ts`,
+`packages/mason-agent/src/server/replies.ts`, `docs/SPEC.md` §4.1d). Three things are as proposed and worth naming because they are the load
 bearing ones:
 
 1. **One reply operation.** `send_to_user` is gone; `reply` is the only call a turn makes to reach a reader, and no
@@ -144,7 +144,7 @@ conversation, plus the transitions that produced each revision — message commi
 errored, queue added, queue withdrawn — so it reacts to a named change instead of re-deriving one from a diff.
 
 The projection is still the wire boundary. The member carries exactly what the whitelist emits, and nothing else: an entry
-kind or a tool that `src/server/projection.ts` does not name still cannot cross.
+kind or a tool that `packages/mason-agent/src/server/projection.ts` does not name still cannot cross.
 
 ### The one place the mechanism differs from the specification
 

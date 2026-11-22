@@ -24,8 +24,8 @@ import {
 	getCurrentSystemPrompt,
 	getCurrentTools,
 } from "@earendil-works/pi-ai/utils/transcript";
-import { housePaths } from "../src/server/house.ts";
-import { type AgentRuntime, openAgentRuntime, type ResolvedModel } from "../src/server/runtime.ts";
+import { housePaths } from "../packages/mason-agent/src/server/house.ts";
+import { type AgentRuntime, openAgentRuntime, type ResolvedModel } from "../packages/mason-agent/src/server/runtime.ts";
 
 const FAUX_MODEL = { provider: "faux", modelId: "faux-1" } as const;
 

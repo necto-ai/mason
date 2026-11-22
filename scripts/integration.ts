@@ -1,7 +1,7 @@
 /**
  * `npm run integration -- <list|add|remove|enable|disable> …` — the services mason reaches.
  *
- * The config (`src/server/integrations.ts`) is read once at boot, so this command says what the *next* start does: the
+ * The config (`packages/mason-agent/src/server/integrations.ts`) is read once at boot, so this command says what the *next* start does: the
  * tool surface and the prompt are decided then, and a list that changed under a running turn would change what the
  * model can do between two messages of one conversation. Editing the file is a restart, and the command says so every
  * time it writes.
@@ -11,14 +11,14 @@
  * are a person's permission decisions, and `npm run connector` mints the credential for them, not the grant. There is no
  * secret here any more, because the signed event door is gone (#104).
  */
-import { housePaths } from "../src/server/house.ts";
+import { housePaths } from "../packages/mason-agent/src/server/house.ts";
 import {
 	readIntegrations,
 	removeIntegration,
 	secondUserGrantNote,
 	setIntegrationEnabled,
 	writeIntegration,
-} from "../src/server/integrations.ts";
+} from "../packages/mason-agent/src/server/integrations.ts";
 
 const [command, ...args] = process.argv.slice(2);
 let house: ReturnType<typeof housePaths>;

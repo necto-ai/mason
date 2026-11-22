@@ -21,7 +21,7 @@
   '';
 
   scripts.dev.exec = ''
-    node --experimental-strip-types src/server/main.ts
+    node --experimental-strip-types packages/mason-agent/src/server/main.ts
   '';
 
   scripts.test-all.exec = ''

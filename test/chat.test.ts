@@ -22,8 +22,13 @@ import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { type FauxResponseStep, fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai/providers/faux";
-import { housePaths } from "../src/server/house.ts";
-import { assertOneUserGrant, readIntegrations, userGrantNames, writeIntegration } from "../src/server/integrations.ts";
+import { housePaths } from "../packages/mason-agent/src/server/house.ts";
+import {
+	assertOneUserGrant,
+	readIntegrations,
+	userGrantNames,
+	writeIntegration,
+} from "../packages/mason-agent/src/server/integrations.ts";
 import { household } from "./support/chat.ts";
 
 const run = promisify(execFile);

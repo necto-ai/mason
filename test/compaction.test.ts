@@ -8,8 +8,8 @@ import { describe, it } from "node:test";
 import type { Models } from "@earendil-works/pi-ai";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
-import type { AgentModelRef } from "../src/server/runtime.ts";
-import { COMPACTION_GOALPOST_TOKENS, compactionReserve } from "../src/server/runtime.ts";
+import type { AgentModelRef } from "../packages/mason-agent/src/server/runtime.ts";
+import { COMPACTION_GOALPOST_TOKENS, compactionReserve } from "../packages/mason-agent/src/server/runtime.ts";
 
 /** A one-model catalog, sized by the faux provider, and the ref that names it. */
 function catalog(definition?: { id: string; contextWindow?: number }): { models: Models; ref: AgentModelRef } {

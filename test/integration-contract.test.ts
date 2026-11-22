@@ -9,9 +9,9 @@ import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { mintConnectorCredential } from "../src/server/connectors.ts";
-import { housePaths } from "../src/server/house.ts";
-import { HOOK_ENTRY_KIND } from "../src/shared/contract.ts";
+import { mintConnectorCredential } from "../packages/mason-agent/src/server/connectors.ts";
+import { housePaths } from "../packages/mason-agent/src/server/house.ts";
+import { HOOK_ENTRY_KIND } from "../packages/mason-agent/src/shared/contract.ts";
 import {
 	connectConnector,
 	entriesOf,

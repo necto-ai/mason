@@ -124,27 +124,31 @@ if (!localEnv) {
 	envUrl = `ssh://${process.env.USER ?? "agent"}@127.0.0.1:${sshPort}`;
 }
 
-const server = spawn(process.execPath, ["--experimental-strip-types", resolve(root, "src/server/main.ts")], {
-	cwd: root,
-	stdio: "inherit",
-	env: {
-		...process.env,
-		MASON_HOME: home,
-		HOST: "127.0.0.1",
-		PORT: port,
-		...(fake ? { PI_FAUX_MODEL: "1" } : {}),
-		...(localEnv
-			? {}
-			: {
-					PI_ENV_SSH_HOST: "127.0.0.1",
-					PI_ENV_SSH_PORT: String(sshPort),
-					PI_ENV_SSH_USER: process.env.USER ?? "agent",
-					PI_ENV_SSH_IDENTITY: clientKey,
-					PI_ENV_SSH_KNOWN_HOSTS: knownHosts,
-					PI_ENV_SSH_ALIAS: hostKeyAlias,
-				}),
+const server = spawn(
+	process.execPath,
+	["--experimental-strip-types", resolve(root, "packages/mason-agent/src/server/main.ts")],
+	{
+		cwd: root,
+		stdio: "inherit",
+		env: {
+			...process.env,
+			MASON_HOME: home,
+			HOST: "127.0.0.1",
+			PORT: port,
+			...(fake ? { PI_FAUX_MODEL: "1" } : {}),
+			...(localEnv
+				? {}
+				: {
+						PI_ENV_SSH_HOST: "127.0.0.1",
+						PI_ENV_SSH_PORT: String(sshPort),
+						PI_ENV_SSH_USER: process.env.USER ?? "agent",
+						PI_ENV_SSH_IDENTITY: clientKey,
+						PI_ENV_SSH_KNOWN_HOSTS: knownHosts,
+						PI_ENV_SSH_ALIAS: hostKeyAlias,
+					}),
+		},
 	},
-});
+);
 children.push(server);
 
 console.log(`[dev] home      ${home}`);

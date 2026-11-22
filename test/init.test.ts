@@ -14,15 +14,15 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai/providers/faux";
-import { runInit } from "../scripts/init.ts";
 import {
 	COMMON_VERSION,
 	commonPaths,
 	readCommonAuth,
 	readCommonRuntime,
 	readCommonSettings,
-} from "../src/server/common.ts";
-import { type ProviderAccess, verifyCompletion } from "../src/server/provider.ts";
+} from "../packages/mason-agent/src/server/common.ts";
+import { type ProviderAccess, verifyCompletion } from "../packages/mason-agent/src/server/provider.ts";
+import { runInit } from "../scripts/init.ts";
 
 const directories = new Set<string>();
 after(async () => {

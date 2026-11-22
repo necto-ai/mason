@@ -17,8 +17,8 @@ import { dirname, join } from "node:path";
 import { after, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { RETIRED_GRANT_KEYS } from "../src/server/connectors.ts";
-import { type HousePaths, housePaths } from "../src/server/house.ts";
+import { RETIRED_GRANT_KEYS } from "../packages/mason-agent/src/server/connectors.ts";
+import { type HousePaths, housePaths } from "../packages/mason-agent/src/server/house.ts";
 import {
 	assertOneUserGrant,
 	type Integration,
@@ -26,7 +26,7 @@ import {
 	removeIntegration,
 	setIntegrationEnabled,
 	writeIntegration,
-} from "../src/server/integrations.ts";
+} from "../packages/mason-agent/src/server/integrations.ts";
 
 const run = promisify(execFile);
 

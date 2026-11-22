@@ -32,7 +32,7 @@ disagreeing.
 
 | | |
 |---|---|
-| Mason's server speaking this protocol | `src/server/connector.ts`: the Chord host, admission, the conversation it publishes, attachments and budgets |
+| Mason's server speaking this protocol | `packages/mason-agent/src/server/connector.ts`: the Chord host, admission, the conversation it publishes, attachments and budgets |
 | The grant and the credential | the entry's `connector` block in `service/integrations.json`; `npm run connector -- add` mints the credential |
 | What mason enforces, and what is pinned | `docs/SPEC.md` §4.1d; `test/connector*.test.ts` |
 | The console connector, in this repository | `scripts/chat.ts` — `mason chat`, on the same socket as every other connector |

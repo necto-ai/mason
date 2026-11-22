@@ -1,12 +1,12 @@
 /**
  * `mason doctor` — the nine checks, printed, with the exit code CI reads.
  *
- * The command is a shell over `runDoctor` (`src/server/doctor.ts`): it resolves which bot it is about the same way every
+ * The command is a shell over `runDoctor` (`packages/mason-agent/src/server/doctor.ts`): it resolves which bot it is about the same way every
  * other verb does, prints one line per check, and returns 0 or 1. It writes nothing, starts nothing and fixes nothing —
  * a doctor that repairs is a doctor whose report nobody can trust to describe what was wrong.
  */
-import { doctorExitCode, formatCheck, runDoctor } from "../src/server/doctor.ts";
-import { housePaths } from "../src/server/house.ts";
+import { doctorExitCode, formatCheck, runDoctor } from "../packages/mason-agent/src/server/doctor.ts";
+import { housePaths } from "../packages/mason-agent/src/server/house.ts";
 
 export function usage(): string {
 	return `usage: mason doctor

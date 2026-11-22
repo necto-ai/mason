@@ -1,5 +1,5 @@
 /**
- * `src/server/doctor.ts` — the seven checks, each with a good fixture and the failure it exists to name.
+ * `packages/mason-agent/src/server/doctor.ts` — the seven checks, each with a good fixture and the failure it exists to name.
  *
  * Doctor is read-only, so the fixtures are files: a bot whose common store and console grant are written, then one thing
  * broken in it. What is pinned is the shape of the report — a failing check says one repair command — plus the two
@@ -15,19 +15,19 @@ import { after, describe, test } from "node:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
-import { consoleGrant } from "../scripts/chat.ts";
-import { writeTextAtomic } from "../src/server/atomic.ts";
-import { commonPaths, hashFile, writeCommonStore } from "../src/server/common.ts";
-import { mintConnectorCredential } from "../src/server/connectors.ts";
-import { doctorExitCode, formatCheck, runDoctor } from "../src/server/doctor.ts";
-import { botPaths, ensureHouse, type HousePaths } from "../src/server/house.ts";
+import { writeTextAtomic } from "../packages/mason-agent/src/server/atomic.ts";
+import { commonPaths, hashFile, writeCommonStore } from "../packages/mason-agent/src/server/common.ts";
+import { mintConnectorCredential } from "../packages/mason-agent/src/server/connectors.ts";
+import { doctorExitCode, formatCheck, runDoctor } from "../packages/mason-agent/src/server/doctor.ts";
+import { botPaths, ensureHouse, type HousePaths } from "../packages/mason-agent/src/server/house.ts";
 import {
 	bootRecordPath,
 	readIntegrationBoot,
 	recordIntegrationBoot,
 	writeIntegration,
-} from "../src/server/integrations.ts";
-import { openAgentRuntime } from "../src/server/runtime.ts";
+} from "../packages/mason-agent/src/server/integrations.ts";
+import { openAgentRuntime } from "../packages/mason-agent/src/server/runtime.ts";
+import { consoleGrant } from "../scripts/chat.ts";
 
 const directories = new Set<string>();
 after(async () => {
