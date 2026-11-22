@@ -1,9 +1,3 @@
-/**
- * The resident memo, when the device is gone: one pull, one read, one named sentence per turn.
- *
- * The transcript test in `runtime-boot.test.ts` proves the tool result; this proves the prompt side does not pay a round
- * trip per model request and does not throw a different sentence from each section. The next turn is a new dial.
- */
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";

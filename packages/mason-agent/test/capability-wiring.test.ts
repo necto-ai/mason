@@ -1,13 +1,3 @@
-/**
- * A capability the repository says it ships has to be somewhere a test can find it.
- *
- * Each capability mason claims has its own done-criterion: one test in this repository fails if it disappears. Nothing in
- * a running bot proves that, so these read the files that wire each capability in and pin the parts a person would have
- * to delete to remove it.
- *
- * They are deliberately about *presence and shape*, not about behaviour: behaviour is measured where it lives. What is
- * pinned here is that mason still asks for it.
- */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -28,8 +18,6 @@ test("the ocr skill ships with mason, so every bot gets it without a person copy
 });
 
 test("the per-boot extensions a boot builds are the list the surface renders, and an inline addition fails", () => {
-	// The document is generated from this list, and the boot refuses a built set that does not match it: a per-boot
-	// extension added inline and left out of the constant stops every boot, instead of silently escaping `SURFACE.md`.
 	assert.doesNotThrow(
 		() => assertPerBootExtensions([...PER_BOOT_EXTENSIONS, MCP_EXTENSION_NAME]),
 		"the unconditional set, beside the conditional `mcp`",

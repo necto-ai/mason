@@ -1,10 +1,3 @@
-/**
- * `src/server/doctor.ts` — the seven checks, each with a good fixture and the failure it exists to name.
- *
- * Doctor is read-only, so the fixtures are files: a bot whose common store and console grant are written, then one thing
- * broken in it. What is pinned is the shape of the report — a failing check says one repair command — plus the two
- * promises a CI job depends on: the exit code, and that a credential never appears in the output.
- */
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -40,7 +33,6 @@ async function tempRoot(): Promise<string> {
 	return directory;
 }
 
-/** A bot with a common store, a console grant and a soul: every check can pass. */
 async function goodBot(): Promise<{ root: string; house: HousePaths }> {
 	const root = await tempRoot();
 	await writeCommonStore(root, { defaultProvider: "faux", defaultModel: "faux-1" });
@@ -48,13 +40,10 @@ async function goodBot(): Promise<{ root: string; house: HousePaths }> {
 	const house = botPaths({ root, name: "alice", home });
 	await ensureHouse(house, "a soul for the doctor");
 	await writeIntegration(house, "console", { enabled: true, description: "the terminal", connector: consoleGrant() });
-	// A grant with no credential is a door that closes 1008, which the connectors check fails: the good fixture is a bot a
-	// connector can actually open.
 	await mintConnectorCredential(house.home, "console");
 	return { root, house };
 }
 
-/** The doctor over one home, on a port nothing listens on: "not started" is a pass, and it has to say so. */
 async function doctor(house: HousePaths) {
 	return runDoctor({ house, env: { PORT: "1" } });
 }
@@ -126,7 +115,6 @@ describe("each failure names one repair", () => {
 	test("a port nothing listens on passes as not started, and a port that answers for another home fails", async () => {
 		const { house } = await goodBot();
 		assert.match(check(await doctor(house), "server").detail, /nothing is listening on 127\.0\.0\.1:1 yet/);
-		// A server that answers, and is not this bot's: the one case the port probe cannot tell from "mason is up".
 		const stranger = createServer((_request, response) => {
 			response.writeHead(200, { "content-type": "application/json" });
 			response.end(JSON.stringify({ status: "ok", home: "/somewhere/else" }));
@@ -249,15 +237,12 @@ describe("the boot's record", () => {
 		});
 		await recordIntegrationBoot(house);
 		const reported = check(await doctor(house), "integrations");
-		// Info, not failure: the log is the default sink, so a kind nobody answers is a design, not a broken home.
 		assert.equal(reported.ok, true, reported.detail);
 		assert.match(reported.detail, /unchanged since the last boot/);
 		assert.match(reported.detail, /kind mail\.arrived wakes nothing/, "an event the file does not define");
 		assert.match(reported.detail, /kind alarm\.ringing wakes nothing/, "an event the file switched off");
 		assert.doesNotMatch(reported.detail, /chat\.message/, "a live event is not reported");
 
-		// Add the missing entry: nothing to report, which is what makes the two lines above about the file rather than
-		// about the check always finding something.
 		await writeFile(
 			house.events,
 			JSON.stringify([

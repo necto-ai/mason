@@ -1,14 +1,3 @@
-/**
- * An integration's MCP server: a live catalog a script asks, and a registry that does not move when a server does.
- *
- * Everything here runs against a fake MCP server on an in-memory transport, injected through the boot's `mcpTransport`
- * seam: no test dials a port, so a test can describe a server that offers two tools, one that is still coming up, one
- * that redeployed mid-conversation, or one that is down without a container existing.
- *
- * The facts worth pinning are the ones a person cannot see from the code: that a connected server changes nothing the
- * model is offered and nothing `tool_search` can promote, that a script sees the catalog as it stands rather than as it
- * stood at boot, and that a call naming a definition that has since changed is refused with the step that fixes it.
- */
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -41,15 +30,12 @@ import {
 	UNKNOWN_MARKER_TOOL,
 } from "./support/mcp.ts";
 
-/** A script that searches and hands back every name it found, as one line. */
 const NAMES_SCRIPT = `const found = await tools.mcp_search({ query: "" });
 return found.map((entry) => entry.integration + "/" + entry.tool).join(",");`;
 
-/** A script that describes one tool and hands back the version. */
 const VERSION_SCRIPT = `const full = await tools.mcp_describe({ integration: "github", tool: "issues.search" });
 return full.version;`;
 
-/** Poll `ready` until it holds: an announcement is a frame the client reads a moment later, not a synchronous call. */
 async function until(ready: () => Promise<boolean>): Promise<boolean> {
 	const deadline = Date.now() + 5_000;
 	while (Date.now() < deadline) {
@@ -73,7 +59,6 @@ describe("the registry does not move when a server does", () => {
 			assert.deepEqual(await declared(connected), await declared(bare), "a connected server costs no prefix");
 			assert.deepEqual(await deferred(connected), await deferred(bare), "and nothing to load with tool_search");
 			assert.ok(!(await deferred(connected)).some((name) => name.startsWith("mcp")), "nothing of MCP's to promote");
-			// A script's catalog, though, is the server's: the four tools are callable and never offered.
 			assert.deepEqual(
 				(await callable(connected)).filter((name) => name.startsWith("mcp_")).sort(),
 				[MCP.call, MCP.describe, MCP.read, MCP.search],
@@ -89,8 +74,6 @@ describe("the registry does not move when a server does", () => {
 
 	it("reaches an integration added since the last boot, without the tool list moving", async () => {
 		const directory = await temporaryDirectory();
-		// A home that booted before any integration existed: its stored extension selection is the array from that boot,
-		// which knows nothing about `mcp`. An array is used verbatim, so nothing would bring the new tools back.
 		const first = await boot(directory, { persist: true });
 		const before = await declared(first);
 		await first.close();
@@ -133,8 +116,6 @@ describe("a script asks the catalog", () => {
 			await runtime.close();
 		}
 
-		// The descriptor a script reads: what the tool is, how it is marked, and the shape it takes. A second server, because
-		// the first pair belongs to the runtime above and one transport is one connection.
 		const other = await fakeServer([SEARCH_TOOL], () => ({ content: [] }));
 		const catalog = await openMcpCatalog({
 			integrations: { github: GITHUB },
@@ -277,7 +258,6 @@ describe("a script asks the catalog", () => {
 		});
 		try {
 			await turn(runtime, "What is there?");
-			// The server redeploys without the tool the next script knows by heart.
 			server.announce([ISSUE_TOOL]);
 			assert.ok(
 				await until(async () => (await catalogNames(runtime)).join(",") === "github/issues.create"),
@@ -287,8 +267,6 @@ describe("a script asks the catalog", () => {
 			const script = outputOf((await scriptResults(runtime)).at(-1) ?? "");
 			assert.match(script, /is not offered any more/, "the call said the tool is gone");
 			assert.match(script, /mcp_describe/, "and named the rediscovery step");
-			// The rediscovery refusal is the catalog's own: with no gateway in front of the call, this sentence is the
-			// whole of what a stale name gets.
 			assert.deepEqual(server.calls, [], "nothing reached the server");
 		} finally {
 			await runtime.close();
@@ -296,8 +274,6 @@ describe("a script asks the catalog", () => {
 	});
 
 	it("keeps the effect tool replay-unsafe and the two reads replay-safe", async () => {
-		// The one line that decides what a crash does to an MCP call: a second `issues/create` is the failure this
-		// registration exists to avoid, and a re-read costs nothing.
 		const server = await fakeServer([SEARCH_TOOL], () => ({ content: [] }));
 		const catalog = await openMcpCatalog({
 			integrations: { github: GITHUB },
@@ -332,7 +308,6 @@ describe("a script asks the catalog", () => {
 			const first = await scriptResults(runtime);
 			assert.equal(outputOf(first[0] ?? ""), "github/issues.search", "one tool, one conversation");
 
-			// The server redeploys: a tool arrives, a tool goes, and it says so.
 			server.announce([ISSUE_TOOL]);
 			assert.ok(
 				await until(async () => (await catalogNames(runtime)).join(",") === "github/issues.create"),
@@ -360,7 +335,6 @@ describe("a script asks the catalog", () => {
 			const version = outputOf((await scriptResults(runtime))[0] ?? "").trim();
 			assert.match(version, /^[0-9a-f]{16}$/, "the first turn learned the version");
 
-			// The same name, another definition: what a redeploy that changed a schema looks like.
 			server.announce([
 				{
 					...SEARCH_TOOL,
@@ -399,7 +373,6 @@ describe("a script asks the catalog", () => {
 				await until(async () => integrationStatus().get("github")?.connected === false),
 				"the route reports a server that went away",
 			);
-			// The next look reconnects: a container that restarted is not a restart of mason.
 			assert.deepEqual(await catalogNames(runtime), ["github/issues.create"]);
 			assert.equal(integrationStatus().get("github")?.connected, true);
 		} finally {
@@ -408,8 +381,6 @@ describe("a script asks the catalog", () => {
 	});
 
 	it("answers nothing about a tool while the server that listed it is away", async () => {
-		// The listing outlives the connection on purpose — a reconnect reuses it — so `describe` has to refuse it: a marker
-		// read from here is a marker for a service that may have tightened it while it was gone.
 		const server = await fakeServer([ISSUE_TOOL], () => ({ content: [{ type: "text", text: "ok" }] }));
 		const directory = await temporaryDirectory();
 		const runtime = await boot(directory, { integrations: { github: GITHUB }, transport: () => server.transport });
@@ -427,11 +398,9 @@ describe("a script asks the catalog", () => {
 	});
 });
 
-/** The text of each `codemode` result in the transcript, in order: what a script handed back. */
 async function scriptResults(runtime: Awaited<ReturnType<typeof boot>>): Promise<string[]> {
 	const conversation = await runtime.conversation();
 	const page = await conversation.entries({}, 1000, undefined, BACKGROUND_CONTEXT);
-	// Newest first, so `[0]` is the first turn and the last index is the one just run.
 	return [...page.items].reverse().flatMap((entry) => {
 		const message = entry.kind === "pi.tool-result" ? entry.model?.[0] : undefined;
 		if (message?.role !== "toolResult" || message.toolName !== "codemode") return [];
@@ -439,26 +408,19 @@ async function scriptResults(runtime: Awaited<ReturnType<typeof boot>>): Promise
 	});
 }
 
-/** The last script's text, which is the one the turn just ran. */
 async function scriptText(runtime: Awaited<ReturnType<typeof boot>>): Promise<string> {
 	return (await scriptResults(runtime)).at(-1) ?? "";
 }
 
-/**
- * The value a script returned, out of the result's prose: `Script completed`, the wall time, and then `Output:` with what
- * the script handed back. The header is the vendor's, so a test reads past it rather than around it.
- */
 function outputOf(result: string): string {
 	const marker = "\nOutput:\n";
 	const at = result.indexOf(marker);
 	return at === -1 ? result : result.slice(at + marker.length);
 }
 
-/** A script that calls a tool by name, the way a script that learned it in an earlier turn would. */
 const CALL_GONE_SCRIPT = `const r = await tools.mcp_call({ integration: "github", tool: "issues.search", arguments: { query: "bug" } });
 return r.content[0].text;`;
 
-/** A script that describes the tool, then calls the version a previous turn learned. */
 const STALE_SCRIPT = `const result = await tools.mcp_call({
   integration: "github",
   tool: "issues.search",
@@ -499,7 +461,6 @@ describe("the boot", () => {
 		let attempts = 0;
 		const starting: McpTransportFactory = () => {
 			attempts += 1;
-			// The port a container has not bound yet: the first attempt is refused, the one 250 ms later is not.
 			if (attempts === 1) throw new Error("connect ECONNREFUSED mason-github:8082");
 			return server.transport;
 		};
@@ -535,7 +496,6 @@ describe("the boot", () => {
 			error: 'MCP integration "github" at http://mason-github:8082/mcp: no container in a test',
 		});
 
-		// The same through the real boot: it starts, the catalog answers nothing, and the route says why.
 		const directory = await temporaryDirectory();
 		const runtime = await boot(directory, { integrations: { github: GITHUB }, transport: downTransport });
 		try {
@@ -576,7 +536,6 @@ describe("the integrations route", () => {
 			mcpTransport: () => server.transport,
 		});
 		try {
-			// The boot's own answer, as a caller with no HTTP route reads it: the panel that served one is gone.
 			assert.deepEqual(integrationSummaries(currentIntegrations()), [
 				{
 					name: "github",

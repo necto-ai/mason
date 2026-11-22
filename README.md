@@ -27,7 +27,8 @@ npm test
 ```
 
 `devenv shell -- setup` runs the same two steps in the pinned toolchain. The checks are `lint`, `typecheck`,
-`gen:surface:check`, `check:docs`, `check:code`, `check:licence` and `check:metadata`; [`CONTRIBUTING.md`](CONTRIBUTING.md)
+`gen:surface:check`, `check:docs`, `check:code`, `check:comments`, `check:licence` and `check:metadata`;
+[`CONTRIBUTING.md`](CONTRIBUTING.md)
 holds the full list and what each one refuses.
 
 ## Licence

@@ -1,11 +1,3 @@
-/**
- * Assets: one store for both directions, and the post-turn resolver that turns a file in `out/` into a row's asset.
- *
- * The resolver is tested against a real execution environment, because its rules are filesystem rules: a symlink, a
- * parent segment and a file written before the run are things a fake would have to reimplement and could get wrong.
- * The two downloads at the end go over a real socket and a real HTTP route, so the row's id is the only thing a client
- * needs to get the bytes back.
- */
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -20,7 +12,6 @@ import { daemonCommand } from "../src/server/env.ts";
 import { connectConnector, connectorHome, serveConnector, until } from "./support/connector.ts";
 
 const directories = new Set<string>();
-/** The device's home: `~` is where the inbox goes, and a test does not write into the developer's own home. */
 const deviceHome = await mkdtemp(join(tmpdir(), "mason-device-home-"));
 process.env.HOME = deviceHome;
 const connection = new Connection({ command: daemonCommand(localDaemon()) });
@@ -53,16 +44,13 @@ describe("the asset store", () => {
 		assert.equal(output.owner, "bot");
 		assert.equal(output.connector, undefined, "an out asset names no connector");
 
-		// The uploader reads its own input, and a `user` grant reads the conversation's output.
 		assert.equal((await store.read("telegram", input.contentId)).status, "ok");
 		assert.equal((await store.read("telegram", output.contentId)).status, "missing");
 		assert.equal((await store.readGranted("telegram", false, output.contentId)).status, "refused");
 		assert.equal((await store.readGranted("telegram", true, output.contentId)).status, "ok");
-		// Another connector with the user grant reads the conversation; without it, nothing.
 		assert.equal((await store.readGranted("slack", true, input.contentId)).status, "ok");
 		assert.equal((await store.readGranted("slack", false, input.contentId)).status, "refused");
 
-		// The sidecar has no path: a row can only carry what is here.
 		const sidecar = JSON.parse(
 			await readFile(join(dataDir, "attachments", ".out", `${output!.contentId}.json`), "utf8"),
 		) as Record<string, unknown>;
@@ -73,8 +61,6 @@ describe("the asset store", () => {
 		assert.equal(expired.status, "expired", "the sidecar keeps the 410 window after the bytes go");
 		assert.notEqual((await store.readGranted("telegram", true, input!.contentId)).status, "ok");
 
-		// Past one further TTL the sidecar is reclaimed, so a home does not carry every upload it ever took. A save
-		// triggers the sweep, and the clock jump clears the hourly throttle.
 		clock += 2 * 60 * 60 * 1000;
 		assert.ok(await store.saveOut(Buffer.from("later"), { mimeType: "text/plain" }));
 		assert.equal(
@@ -91,11 +77,9 @@ describe("the asset store", () => {
 		assert.ok(saved !== undefined);
 		const stored = join(dataDir, "attachments", "telegram", saved.contentId);
 
-		// A replacement of the same length: the sha256 is what tells it apart from the sender's file.
 		await writeFile(stored, "the brief, in fulL");
 		assert.equal((await store.read("telegram", saved.contentId)).status, "corrupt");
 
-		// A truncation: short bytes are a refusal, never what a reader gets back.
 		await writeFile(stored, "the brief");
 		assert.equal((await store.read("telegram", saved.contentId)).status, "corrupt");
 	});
@@ -109,7 +93,6 @@ describe("the post-turn resolver", () => {
 		const out = join(workspace, "out");
 		await mkdir(out, { recursive: true });
 		await writeFile(join(out, "report.md"), "hello");
-		// A file the message never mentions: present under `out/`, and not a deliverable. Nothing walks for it.
 		await writeFile(join(out, "extra.txt"), "yo");
 		await writeFile(join(out, "big.bin"), "x".repeat(20));
 		await writeFile(join(workspace, "secret.txt"), "top secret");
@@ -322,8 +305,6 @@ describe("a turn's file over the wire", () => {
 				});
 				assert.equal(response.status, 200);
 				assert.equal(await response.text(), "from them");
-				// The model still reads it from the inbox, at the path the line names, through the same environment its
-				// tools use: nothing was written by the process that submitted it.
 				const env = await served.server.runtime.env.envFor({
 					conversationId: String(served.server.runtime.rootId),
 					cwd: served.server.runtime.workspaceDir,

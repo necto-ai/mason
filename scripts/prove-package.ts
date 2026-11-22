@@ -1,22 +1,3 @@
-/**
- * Prove the package as a stranger installs it.
- *
- * `npm run e2e:first-run` walks the source path: `bin/mason.ts`, a scratch root, the checkout's own `docs/agent`. Every
- * other check reads the tree. The gap between those and a release is the *installed shape* — a tarball built by `prepack`,
- * unpacked into a directory that has no checkout above it — and it is where the release blockers lived: the deployment
- * reference travelled only because a script remembered to copy it, and when that copy went the prompt lost its `docs`
- * section silently.
- *
- * So this packs the root, installs the tarball into an empty project outside the repository, and drives the installed
- * `mason` there with a temporary `HOME` and `MASON_ROOT`: `init` with its flags, `new`, then `doctor`, then the prompt
- * rendered by the installed `dist/scripts/prompt.js`. It also fails on a `.ts` file under the installed `dist`,
- * because a consumer's Node refuses to strip types inside `node_modules`.
- *
- * `npm pack` runs the package's own `prepack`, so this builds `dist/` in the checkout — the one thing it writes, and the
- * thing the release ships. Everything else lands in a directory under `$TMPDIR` and is removed.
- *
- * Run with `npm run prove:package`.
- */
 import { execFile } from "node:child_process";
 import { access, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -27,13 +8,8 @@ import { promisify } from "node:util";
 const exec = promisify(execFile);
 const root = fileURLToPath(new URL("..", import.meta.url));
 
-/** The package a stranger installs, and the one this script packs. */
 const PACKAGE = "mason-agent";
 
-/**
- * The reference's front page, as the tarball carries it. `dist/docs/agent` is its source, and the prompt indexes the
- * shipped pages by title; README is the one page the index leaves out, so the tarball's copy is checked directly.
- */
 const DOCS_FRONT_PAGE = join("dist", "docs", "agent", "README.md");
 
 interface Run {
@@ -71,13 +47,10 @@ async function main(): Promise<void> {
 
 		const installed = join(project, "node_modules", PACKAGE);
 		await step("no TypeScript file ships in dist", async () => {
-			// A declaration is not source, and `dist` is where it belongs: the rule is the one `prove:client` applies.
 			const stray = await typescriptIn(join(installed, "dist"));
 			if (stray.length > 0) throw new Error(`the installed package ships source: ${stray.join(", ")}`);
 		});
 
-		// A first run has nothing of the operator's: its own HOME, its own root, and no provider. `PI_FAUX_MODEL=1` is the
-		// switch the runtime plays a model under, which is what makes this cost nothing and reach no network.
 		const env = environment(join(workspace, "home"), join(workspace, "root"));
 
 		await step("a first run, flags only, and a doctor, with the installed command", async () => {
@@ -102,9 +75,6 @@ async function main(): Promise<void> {
 				readonly prompt: string;
 				readonly sections: ReadonlyArray<{ readonly key: string; readonly text: string }>;
 			};
-			// A listed page, not the grounding line: the line is a constant in the section, while a `- ` line can only
-			// exist if the installed `dist/docs/agent` was read. README is the one page the index leaves out, so the
-			// tarball's copy is checked directly.
 			const listed =
 				rendered.sections
 					.find((section) => section.key === "docs")
@@ -126,10 +96,6 @@ async function main(): Promise<void> {
 	);
 }
 
-/**
- * The environment a stranger's first run has: a home of its own, a root beside it, and no target inherited from whatever
- * session started this script. The port is this run's, so a bot already serving on 8787 is not mistaken for this one.
- */
 function environment(home: string, masonRoot: string): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = {
 		...process.env,
@@ -165,7 +131,6 @@ async function typescriptIn(dir: string): Promise<string[]> {
 	return found;
 }
 
-/** A file a consumer's Node could not load. A declaration is not source, exactly as `prove:client` counts it. */
 function isSource(name: string): boolean {
 	if (name.endsWith(".d.ts")) return false;
 	return name.endsWith(".ts") || name.endsWith(".tsx") || name.endsWith(".mts");

@@ -1,11 +1,3 @@
-/**
- * The connector door: mason's Chord host, the session it serves, and the three appends a connector can make.
- *
- * Every test here drives the published SDK over a real socket, because the parts most likely to be wrong are the parts a
- * direct call would skip: the bearer credential on the upgrade, the path, the child host's name, the session as state.
- * The admission rules are read off the durable transcript rather than a counter — an `app.connector` entry with its
- * origin, an `app.hook` entry that is not conversation — because that is where the claim lives.
- */
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -23,14 +15,12 @@ import {
 	until,
 } from "./support/connector.ts";
 
-/** The messages the reader has been sent: the committed rows of the newest state this socket applied. */
 function answers(state: ConversationState | undefined): string[] {
 	return (state?.transcript ?? []).flatMap((row) =>
 		row.kind === "delivered" && row.streaming !== true ? [row.text] : [],
 	);
 }
 
-/** Every entry of one kind, oldest first, as plain JSON. */
 async function entries(served: Awaited<ReturnType<typeof serveConnector>>, kind: string) {
 	return (await entriesOf(served.server)).filter((entry) => entry.kind === kind);
 }
@@ -56,7 +46,6 @@ describe("a connector's words", () => {
 
 				const submitted = await entries(served, CONNECTOR_ENTRY_KIND);
 				assert.equal(submitted.length, 1);
-				// The origin is the durable record of where the words came from: a restart cannot lose it, and no row carries it.
 				assert.deepEqual(submitted[0]?.data, {
 					origin: { connector: "telegram", ref: "team", messageId: "m1", actor: { id: "8811", name: "Denis" } },
 				});
@@ -139,8 +128,6 @@ describe("a connector's words", () => {
 	});
 
 	it("an entry that grants only events refuses words, and places nothing", async () => {
-		// The face is the ceiling above the actor: an entry the operator gave an event kind and no `user` may raise alarms
-		// and may not be spoken through, and a submission is refused before anything is placed in the transcript.
 		const home = await connectorHome();
 		const served = await serveConnector({ home, steps: quietTurns() });
 		try {
@@ -157,8 +144,6 @@ describe("a connector's words", () => {
 				assert.equal(refused.status === "refused" ? refused.code : undefined, "mason.face_not_granted");
 				assert.equal((await entries(served, CONNECTOR_ENTRY_KIND)).length, 0, "nothing landed");
 				assert.equal((await entries(served, HOOK_ENTRY_KIND)).length, 0, "and no turn was started");
-				// The contract stays one `mason.peer`; the grant decides the surface. No command is offered, and a control
-				// is refused naming the grant that is missing rather than the op.
 				assert.deepEqual(connected.connector.status().session?.commands, [], "an event client spends no control");
 				assert.deepEqual(answers(connected.states.at(-1)), [], "and it is served no transcript");
 				const control = await connected.connector.control({ op: "status" });
@@ -366,13 +351,9 @@ describe("the session", () => {
 		const home = await connectorHome();
 		const served = await serveConnector({ home });
 		try {
-			// A credential minted for the entry called `off`, whose connector is disabled: minting is allowed — it is the
-			// grant that decides — and the socket has to close rather than open with nothing on it.
 			const refused = await opens(served.url, home.offCredential ?? "");
 			assert.equal(refused, false, "a switched-off entry opened a socket");
 
-			// The same door, the credential of an entry that is on: this is what makes the case above about admission
-			// rather than about sockets that never open.
 			assert.equal(await opens(served.url, home.credential), true, "an enabled entry was refused");
 		} finally {
 			await served.close();
@@ -391,8 +372,6 @@ describe("control", () => {
 				const status = await connected.connector.control({ op: "status" });
 				assert.equal(status.handled, true);
 				assert.ok(status.status !== undefined, "a status control answers with the run's state");
-				// The pair the boot resolved, on the status a client already asks for: the faux install runs one model at
-				// `off`, which is what a boot with no role map derives.
 				assert.deepEqual(status.status.roles, {
 					main: { provider: "faux", modelId: "faux-1", thinking: "off" },
 					subagent: { provider: "faux", modelId: "faux-1", thinking: "off" },
@@ -429,8 +408,6 @@ describe("budgets", () => {
 		try {
 			const connected = await connectConnector(served);
 			try {
-				// The limiter is per process and shared with the rest of this file's tests only through this server, so the
-				// budget is spent here and nowhere else.
 				let pending = 0;
 				for (let index = 0; index < 70; index += 1) {
 					const outcome = await connected.connector.submit({
@@ -451,12 +428,6 @@ describe("budgets", () => {
 	});
 });
 
-/**
- * Whether a socket with this credential stays open.
- *
- * A refused upgrade closes, and so does a socket that opened because this test closed it: the distinction is the point, so
- * the answer is "it was still open a moment after the handshake", not "it emitted close at some time".
- */
 async function opens(url: string, credential: string): Promise<boolean> {
 	const socket = new WebSocket(url, { headers: { authorization: `Bearer ${credential}` } });
 	return new Promise<boolean>((resolve) => {

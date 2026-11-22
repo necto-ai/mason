@@ -1,31 +1,3 @@
-/**
- * `delegate`: one foreground child conversation, run to its answer, returned as this call's result.
- *
- * A child is a real pi-durable conversation owned by this tool call's task, not a second transcript in the parent's
- * context and not a `pi` subprocess: it starts empty, ends with an answer, and the only thing that crosses back is that
- * answer. Four consequences shape the code.
- *
- * **It is found before it is created.** The call is `replay: "safe"`, so a run that a restart interrupts is re-executed
- * rather than abandoned, and the re-execution must not start a second child. The lookup is durable state, not memory: the
- * task's memo names the conversation, and a crash between the creating commit and the memo is covered by scanning the
- * conversations the task owns. The input's request id is the call's, so a resubmission after a restart returns the
- * submission already made instead of a second one.
- *
- * **It cannot speak to the person.** The child's selection is written explicitly in the creating commit — one extension,
- * `coding-tools` — so the delivery tool and its two gates are absent from it by construction, and the child's words reach
- * the reader only as this result. `repairBase` is a boot option that only ever appends to the *root*, so nothing re-adds
- * what the child did not select: the unconditional-delivery rule holds for every person-facing conversation, and a
- * task-owned child is not one.
- *
- * **It has three bounds.** `maxTurns` is the vendor's, and ends a looping child `unanswered` with `turn_limit`. A wall
- * clock is mason's, because no vendor API declares a run deadline: the wait is raced against a timer, and a child that
- * runs past it is aborted, which settles its run and leaves no task behind. The third is the write lease, which a child
- * that may write takes for its run and gives back at settlement.
- *
- * **It is foreground.** The task is not `background`, so the child is in the parent conversation's ordinary ownership
- * scope: aborting the parent cascades bottom-up into the child's run, and the parent's idle wait includes it. Nothing
- * here schedules, and nothing outlives the turn that asked.
- */
 import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Context } from "@earendil-works/chord";
@@ -46,37 +18,21 @@ import type { AgentRole } from "../common.ts";
 import { acquireWriteLease, leaseRefusalText, type WriteLease } from "../lease.ts";
 import { refusal } from "./nested.ts";
 
-/** The tool's name: what the model calls. */
 export const SUBAGENT_TOOL = "delegate";
-/** The extension's name, and the one a stored selection has to keep to keep delegation. */
 export const SUBAGENT_EXTENSION = "subagent";
 
-/** How many tool rounds a child gets. A child's work is bounded; a loop is a failed delegation, not a longer one. */
 export const SUBAGENT_TURNS = 8;
 
-/**
- * How long a child may run, in milliseconds. The default is generous on purpose: it exists for a provider call that
- * hangs, not to race a slow model, and a turn that kills real work has cost the person the work.
- */
 export const SUBAGENT_TIMEOUT_MS = 20 * 60_000;
 
-/** The tools a read-only child does not get: the three that write, leaving `read`. */
 export const READ_ONLY_EXCLUDED = ["write", "edit", "bash"] as const;
 
-/**
- * What a child is told, instead of the persona the person's conversation gets.
- *
- * It is `instructions`, not a section: the child selects no `prompt` extension, so this paragraph is its whole system
- * prompt. Written as an assignment rather than as a character, because that is what a child is: it has no one to be
- * charming to, and its only reader is the parent that asked.
- */
 export const WORKER_BRIEF = `You are a worker: another agent delegated one task to you and will read only your last message.
 Do the task. Read what you need, change what you were asked to change, and answer with the result: what you did, what you
 found, and anything the person asking has to know. Answer in full sentences and name the files and the checkout you
 touched. You cannot reach the person and you cannot delegate further. If the task cannot be done, say what stopped you,
 in the same answer, rather than asking a question nobody will answer.`;
 
-/** What `delegate` takes. Closed against an argument a model might invent from a prompt it read elsewhere. */
 const DelegateParams = Type.Object(
 	{
 		task: Type.String({
@@ -108,21 +64,16 @@ const DelegateParams = Type.Object(
 );
 
 export interface SubagentOptions {
-	/** Where the lease files live: the boot's `leaseDir`, or the machine-wide directory `leaseDirOf()` gives it. */
 	readonly leaseDir: string;
-	/** The role a child runs: the boot's `subagent` role, model and thinking level together. */
 	readonly role: AgentRole;
 }
 
-/** The child this call made, or one a previous execution of it already made. */
 interface Child {
 	readonly id: ConversationId;
 }
 
-/** The memo name the child's id is kept under, on the tool task: the durable answer to "did I make one already?". */
 const CHILD_MEMO = "subagent.child";
 
-/** The request id a child's one input carries. Derived from the call, so a re-execution names the same one. */
 export function subagentRequestId(callId: string): string {
 	return `subagent:${callId}`;
 }
@@ -161,8 +112,6 @@ export function createSubagent(options: SubagentOptions): Extension {
 			const handle = await api.conversation(child.id, context);
 			if (handle === undefined) return refusal(`${ENGINE}: the worker's conversation is no longer reachable`);
 
-			// The lease first, and only for a writer: a reader never blocks a writer, and the refusal costs the worker
-			// nothing because it has not been given the input yet.
 			let lease: WriteLease | undefined;
 			if (writing && where !== undefined) {
 				const taken = await acquireWriteLease({
@@ -181,8 +130,6 @@ export function createSubagent(options: SubagentOptions): Extension {
 				);
 				const raced = await withTimeout(submission.wait(context), timeoutMs ?? SUBAGENT_TIMEOUT_MS);
 				if (raced.timedOut) {
-					// Aborting is what settles the child: its run ends `aborted`, its task is terminal, and the parent's
-					// own abort scope is empty again. Nothing is left running behind the failure this call returns.
 					await handle.abort(context);
 					return refusal(
 						`${ENGINE}: the worker ran past its ${Math.round((timeoutMs ?? SUBAGENT_TIMEOUT_MS) / 1000)} s wall clock and was stopped; its transcript is kept in conversation ${String(child.id)}. Do not retry the whole thing blind: split it, or do the part that hung yourself.`,
@@ -219,18 +166,10 @@ export function createSubagent(options: SubagentOptions): Extension {
 	return defineExtension({ name: SUBAGENT_EXTENSION, tools: [tool] });
 }
 
-/** The checkout as one checkout: its realpath, which is also the lease's key, or the path as given when it has none. */
 async function canonical(path: string): Promise<string> {
 	return realpath(path).catch(() => resolve(path));
 }
 
-/**
- * The child this call already made, or a new one in the creating commit.
- *
- * Both halves are durable. The memo is the cheap answer and survives a restart with the task; the scan is what covers a
- * crash between the creating commit and the memo, which is a window a restart alone cannot close. The scan comes first in
- * the commit, before the creation that is its first table write.
- */
 async function findOrCreateChild(
 	api: ToolExecutionApi,
 	context: Context,
@@ -250,13 +189,6 @@ async function findOrCreateChild(
 	return child;
 }
 
-/**
- * What the child's `pi.agent` is made to say, field by field.
- *
- * Every field is written, including the ones that clear a value (`null`), because a task-owned conversation starts as a
- * copy of its owner's agent: an unset field here is the *parent's* field, which is how a child inherits the persona, the
- * checkout, or a tool filter nobody meant it to have.
- */
 function childChange(plan: {
 	readonly role: AgentRole;
 	readonly turns: number;
@@ -266,11 +198,7 @@ function childChange(plan: {
 	return {
 		model: { provider: plan.role.provider, modelId: plan.role.modelId },
 		thinkingLevel: plan.role.thinking,
-		// The explicit selection, written in the same commit that creates the conversation: `coding-tools` and nothing
-		// else. No `prompt` (the worker brief is `instructions`), no `delivery` (a child does not speak to the person),
-		// no `subagent` (no nesting), no codemode, no MCP.
 		extensions: [CodingTools],
-		// By registration, not by name: a change carries the tools themselves, and the names are what gets stored.
 		tools: plan.readOnly ? { remove: writers() } : null,
 		modelTools: null,
 		instructions: WORKER_BRIEF,
@@ -279,12 +207,10 @@ function childChange(plan: {
 	};
 }
 
-/** The three coding tools that change a checkout: what a read-only child is not given. */
 function writers() {
 	return (CodingTools.tools ?? []).filter((tool) => (READ_ONLY_EXCLUDED as readonly string[]).includes(tool.name));
 }
 
-/** Why the child's run ended without an answer, from the record the vendor keeps for exactly that. */
 async function childFailure(
 	api: ToolExecutionApi,
 	child: ConversationId,
@@ -296,14 +222,6 @@ async function childFailure(
 	return { reason: failure.reason, ...(failure.detail === undefined ? {} : { detail: failure.detail }) };
 }
 
-/**
- * The text of the answer the child committed: the newest assistant entry in its own transcript.
- *
- * The transcript is the record, so a restart between the child's run and this read changes nothing: a done submission
- * means the answer was committed before the run settled, and a child whose work ran on tool rounds has its answer as the
- * newest assistant message, after them. A submission's own entry is the input it placed, not the answer, which is why
- * this reads the transcript rather than the submission.
- */
 async function readAnswer(api: ToolExecutionApi, child: ConversationId, context: Context): Promise<string | undefined> {
 	const page = await api.commit((tx) => tx.scanEntries({ conversationId: child, order: "descending" }, 10), context);
 	for (const entry of page.items) {
@@ -315,7 +233,6 @@ async function readAnswer(api: ToolExecutionApi, child: ConversationId, context:
 	return undefined;
 }
 
-/** A message's text: a plain string, or its text blocks joined. Reasoning and tool calls are not text. */
 function textOf(message: { content?: unknown } | undefined): string | undefined {
 	const content = message?.content;
 	if (typeof content === "string") return content;
@@ -328,12 +245,6 @@ function textOf(message: { content?: unknown } | undefined): string | undefined 
 		.join("");
 }
 
-/**
- * `promise`, or a timer: the wall clock no vendor API declares.
- *
- * The timer is cleared when the promise wins, so a finished call leaves nothing armed, and a timeout leaves the wait
- * pending with a settled task behind it: the caller aborts the child, which is what makes the pending wait moot.
- */
 async function withTimeout<T>(
 	promise: Promise<T>,
 	ms: number,
@@ -341,7 +252,6 @@ async function withTimeout<T>(
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	const timeout = new Promise<{ readonly timedOut: true }>((resolveTimeout) => {
 		timer = setTimeout(() => resolveTimeout({ timedOut: true }), ms);
-		// A pending timer would hold the process open for the child's whole clock, which is the opposite of a bound.
 		timer.unref?.();
 	});
 	try {

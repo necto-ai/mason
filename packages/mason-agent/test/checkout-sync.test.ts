@@ -1,16 +1,3 @@
-/**
- * The device's checkout, over a real ssh target.
- *
- * The seam is `npm run dev:stack`'s sshd: a real unprivileged sshd on loopback, the code path `sshConnection` takes in
- * a deployment. Every assertion is bytes, not an exit code: a guest commit is the host's commit, and a host commit is
- * in the next guest's `git log`. Without `PI_ENV_SSH_*` the file skips, naming the reason, because CI has no device:
- * a test that fails where the thing it tests cannot exist is a test someone disables.
- *
- * The last two drive whole turns on the device. One has the model write an over-cap profile through `bash`: the host's
- * validation refuses it, and the turn continues once with the rule the model broke. The other deletes the device home
- * between turns: the next pull recreates the checkout, and the prompt is built from it carrying the host's profile. A
- * fifth proves that a turn which forgets to commit still lands: the accept commits its checkout first.
- */
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -50,7 +37,6 @@ async function tempDir(prefix: string): Promise<string> {
 	return directory;
 }
 
-/** The host's home, laid out by the code a boot uses, with its first commit in place. */
 async function hostHome(prefix: string): Promise<{ home: string; agent: string; branch: string }> {
 	const paths = housePaths(join(await tempDir(prefix), "home"));
 	await ensureHouse(paths, "You are SOUL, a test agent.");
@@ -58,7 +44,6 @@ async function hostHome(prefix: string): Promise<{ home: string; agent: string; 
 	return { home: paths.home, agent: paths.agentDir, branch: await hostBranch(paths.agentDir) };
 }
 
-/** The environment the tools use to reach one device home. */
 async function deviceAt(home: string): Promise<{ home: string; env: ExecutionEnv; close(): void }> {
 	await mkdir(home, { recursive: true, mode: 0o700 });
 	const { connection } = sshConnection({ ...(target as NonNullable<typeof target>) });
@@ -66,12 +51,10 @@ async function deviceAt(home: string): Promise<{ home: string; env: ExecutionEnv
 	return { home, env, close: () => connection.close() };
 }
 
-/** The device home, and the environment the tools use to reach it. */
 async function device(prefix: string): Promise<{ home: string; env: ExecutionEnv; close(): void }> {
 	return deviceAt(join(await tempDir(prefix), "device"));
 }
 
-/** One guest command, with its stdout and exit code, the way `bash` runs it. */
 async function guest(env: ExecutionEnv, command: string): Promise<{ stdout: string; code: number }> {
 	let stdout = "";
 	const result = await env.exec(
@@ -99,7 +82,6 @@ describe("the device's checkout", () => {
 			});
 			assert.deepEqual(await checkout.pull(machine.env, BACKGROUND_CONTEXT), { status: "pulled" });
 
-			// A commit made in the guest through `bash`, the way the agent keeps its memory.
 			const committed = await guest(
 				machine.env,
 				`cd '${join(machine.home, "agent")}' && printf 'from the guest\\n' > guest.md && git add -A && ` +
@@ -108,7 +90,6 @@ describe("the device's checkout", () => {
 			assert.equal(committed.code, 0, "the guest can commit its own checkout");
 			const guestSha = committed.stdout.trim();
 			assert.equal(await checkout.accept(machine.env, BACKGROUND_CONTEXT).then((r) => r.status), "accepted");
-			// Bytes, not an exit code: the host reads the file the guest wrote, and its HEAD is that commit.
 			assert.equal(await readFile(join(host.agent, "guest.md"), "utf8"), "from the guest\n");
 			assert.equal((await run("git", ["-C", host.agent, "rev-parse", "HEAD"])).stdout.trim(), guestSha);
 			assert.match(
@@ -116,8 +97,6 @@ describe("the device's checkout", () => {
 				/guest: from the guest/,
 			);
 
-			// A commit made on the host, by the person, mid-conversation. `pull` commits it as theirs and the checkout
-			// hard-resets onto it; the next guest `git log` holds it.
 			await writeFile(join(host.agent, "host.md"), "from the host\n");
 			await run("git", ["-C", host.agent, "add", "-A"]);
 			await run("git", [
@@ -157,10 +136,8 @@ describe("the device's checkout", () => {
 				machine.env,
 				`cd '${join(machine.home, "agent")}' && printf 'guest\\n' > guest.md && git add -A && git commit -qm 'guest: merge'`,
 			);
-			// The person edits while the turn is working: the host moves under the checkout's commits.
 			await writeFile(join(host.agent, "host.md"), "mid-turn\n");
 			assert.equal((await checkout.accept(machine.env, BACKGROUND_CONTEXT)).status, "diverged");
-			// The next pull is the merge, and the accept after it is the fast-forward that keeps both.
 			assert.equal((await checkout.pull(machine.env, BACKGROUND_CONTEXT)).status, "pulled");
 			assert.equal((await checkout.accept(machine.env, BACKGROUND_CONTEXT)).status, "accepted");
 			assert.equal(await readFile(join(host.agent, "guest.md"), "utf8"), "guest\n");
@@ -181,8 +158,6 @@ describe("the device's checkout", () => {
 				branch: host.branch,
 			});
 			await checkout.pull(machine.env, BACKGROUND_CONTEXT);
-			// A `write` that never ran `git commit`: the file is in the checkout, and the end of the turn is the last
-			// moment it can become memory. Without the accept-side commit the next pull would reset it away.
 			await guest(machine.env, `cd '${join(machine.home, "agent")}' && printf 'written\n' > note.md`);
 			assert.equal(await checkout.accept(machine.env, BACKGROUND_CONTEXT).then((r) => r.status), "accepted");
 			assert.equal(await readFile(join(host.agent, "note.md"), "utf8"), "written\n");
@@ -231,8 +206,6 @@ describe("the device's checkout", () => {
 			const access: ResolvedModel = { models, ref: { provider: "faux", modelId: "faux-1" }, faux: true };
 			const long = "x".repeat(PROFILE_MAX_CHARS + 1);
 			const steps: FauxResponseStep[] = [
-				// `bash`, not `write`: the write hook refuses an over-cap profile before it lands, and this proof is about the
-				// host's incoming-diff check, which sees whatever a command left in the checkout.
 				fauxAssistantMessage(
 					[
 						fauxToolCall("bash", {
@@ -242,7 +215,6 @@ describe("the device's checkout", () => {
 					{ stopReason: "toolUse" },
 				),
 				fauxAssistantMessage(fauxText("Kept.")),
-				// The continuation's answer: the model was told the rule, and fixes the file in the same turn.
 				fauxAssistantMessage(
 					[
 						fauxToolCall("bash", {
@@ -269,7 +241,6 @@ describe("the device's checkout", () => {
 					await conversation.submit({ type: "input", content: "Write down who I am." }, BACKGROUND_CONTEXT)
 				).wait(BACKGROUND_CONTEXT);
 				assert.equal(settled.status, "done");
-				// The host's memory is the second commit: the first was refused, the turn continued, and this one was accepted.
 				assert.equal(await readFile(join(paths.agentDir, "profile.md"), "utf8"), "Denis prefers short answers.\n");
 				const subjects = (await run("git", ["-C", paths.agentDir, "log", "--format=%s"])).stdout;
 				assert.match(subjects, /the shorter profile/);
@@ -314,8 +285,6 @@ describe("the device's checkout", () => {
 		const models = createModels();
 		models.setProvider(faux.provider);
 		const access: ResolvedModel = { models, ref: { provider: "faux", modelId: "faux-1" }, faux: true };
-		// The profile is read into every request's system prompt, not replayed from the transcript: the factory sees
-		// the request the model would have received, and the second one is after the device lost its home.
 		const prompts: string[] = [];
 		const capture = (context: { messages: readonly unknown[] }) => {
 			prompts.push(JSON.stringify(context.messages));
@@ -341,7 +310,6 @@ describe("the device's checkout", () => {
 			runtime = undefined;
 			machine.close();
 
-			// The device is gone: no checkout, no home. The next turn dials it again and pulls from the host.
 			await rm(machine.home, { recursive: true, force: true });
 			await mkdir(machine.home, { recursive: true, mode: 0o700 });
 			const fresh = await deviceAt(machine.home);

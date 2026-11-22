@@ -1,15 +1,7 @@
-/**
- * `fauxSessionScript` — the script a bot served under `PI_FAUX_MODEL=1` answers from.
- *
- * This exists because the queue used to be empty in the serving path, and because what reaches a reader is the text a
- * generation writes: one answer is one message, so the script holds one plain answer per turn. A process that looks
- * alive and cannot speak is worse than one that refuses to start, so the answer's content is pinned here.
- */
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { fauxSessionScript } from "../src/server/provider.ts";
 
-/** The tool calls in one message, as `{name, arguments}`. */
 function calls(message: { content: unknown }): Array<{ name: string; arguments: unknown }> {
 	if (!Array.isArray(message.content)) return [];
 	return message.content.filter((part: { type?: string }) => part.type === "toolCall") as Array<{

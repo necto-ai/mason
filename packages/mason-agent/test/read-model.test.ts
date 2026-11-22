@@ -1,11 +1,3 @@
-/**
- * The revision a client applies: what one turn's publish costs on the wire, and what it tells the client happened.
- *
- * The projection suite pins *what* crosses the wire; this one pins *how much* of it moves. A chat window renders a
- * transcript it already has, so a token on the answer must cost one splice and a committed row must never be sent
- * again — that is the property the memoised fold exists for, and the reason `Cell.replace(…, { diff: true })` is the
- * publish. The 200-row fixture is the size a conversation reaches in a day, and it records its own numbers.
- */
 import assert from "node:assert/strict";
 import { after, describe, it } from "node:test";
 import { diffRevisions, type Op } from "@earendil-works/chord/delta";
@@ -14,7 +6,6 @@ import { createReadModel } from "../src/server/read-model.ts";
 
 type Entry = Record<string, unknown>;
 
-/** A view built from entries, the way pi-durable hands one to the server. */
 function viewOf(entries: Entry[], docs: Record<string, unknown> = {}): ConversationView {
 	return { conversation: { id: 1 }, entries, docs } as unknown as ConversationView;
 }
@@ -23,27 +14,22 @@ function entry(id: number, kind: string, model: unknown[], extra: Record<string,
 	return { id, kind, model, ...extra };
 }
 
-/** One committed agent message: the assistant generation's text, which is the row. */
 function messageEntry(id: number, text: string): Entry {
 	return entry(id, "pi.assistant", [{ role: "assistant", content: [{ type: "text", text }], stopReason: "stop" }]);
 }
 
-/** One write nothing reads, as the outbox recorded them before the cut: a row the fold has to leave out. */
 function retiredDeliveryEntry(id: number, deliveryId: string, status: string): Entry {
 	return entry(id, "app.delivery", [], { data: { deliveryId, status } });
 }
 
-/** One medium notice, as the retired append shape wrote them: a row nothing reads any more. */
 function retiredNoticeEntry(id: number, text: string): Entry {
 	return entry(id, "app.notice", [], { data: { text } });
 }
 
-/** One person's words. */
 function userEntry(id: number, text: string): Entry {
 	return entry(id, "pi.user", [{ role: "user", content: text }]);
 }
 
-/** The round in flight, carrying the text a client watches being written. */
 function liveDocs(text: string, run?: { taskId: number }): Record<string, unknown> {
 	return {
 		"pi.live": {
@@ -56,12 +42,6 @@ function liveDocs(text: string, run?: { taskId: number }): Record<string, unknow
 	};
 }
 
-/**
- * A conversation of `turns` answered turns: each one is a person's line and the reply it got.
- *
- * Two entries per turn, which is what a transcript looks like after a day of short exchanges and enough rows that
- * rebuilding all of them per token would be visible in the numbers below.
- */
 function longConversation(turns: number): Entry[] {
 	const entries: Entry[] = [];
 	for (let turn = 0; turn < turns; turn += 1) {
@@ -70,15 +50,12 @@ function longConversation(turns: number): Entry[] {
 	return entries;
 }
 
-/** The path an op addresses, as an array of segments: the root replacement has none. */
 function pathOf(op: Op): readonly (string | number)[] {
 	return op[0] === "r" ? [] : (op[1] as readonly (string | number)[]);
 }
 
-/** What this run measured: printed at the end, and quoted on the issue. Times are the median of the samples. */
 const measured: { rows?: number; tokens?: number; opsPerDiff?: number; nextUs?: number; diffUs?: number } = {};
 
-/** The median of a sample, which is what a per-token cost is: one slow first call is not the steady state. */
 function median(samples: readonly number[]): number {
 	const sorted = [...samples].sort((left, right) => left - right);
 	return sorted[Math.floor(sorted.length / 2)] ?? 0;
@@ -98,7 +75,6 @@ describe("what a token costs on the wire", () => {
 		const committedRows = entries.length;
 		const model = createReadModel();
 		const before = model.next(viewOf(entries, liveDocs("Half a s")));
-		// One token at a time, the way the provider writes: thirty updates, each a few characters longer than the last.
 		const answer = "Half a sentence that keeps going until it is worth measuring, one token at a time.";
 		const tokens = Array.from({ length: 30 }, (_, index) => answer.slice(0, 10 + index * 2));
 		let previous = before;
@@ -135,7 +111,6 @@ describe("what a token costs on the wire", () => {
 				);
 			}
 		}
-		// A token is two ops and no more: the revision counter, and the append to the text of the row in flight.
 		const tail = diffs.map((ops) => ops.filter((op) => pathOf(op)[0] === "transcript"));
 		assert.ok(
 			tail.every((ops) => ops.length === 1),
@@ -148,7 +123,6 @@ describe("what a token costs on the wire", () => {
 		assert.equal(tail[0]?.[0]?.[0], "a", "the op is an append to the text, not a replacement of it");
 		assert.deepEqual(pathOf(tail[0]?.[0] as Op), ["transcript", committedRows, "text"]);
 
-		// The memo is the other half of the claim: the rows a later revision keeps are the same objects.
 		const afterToken = model.next(viewOf(entries, liveDocs(tokens[0] as string)));
 		assert.ok(
 			(afterToken.transcript[0] as unknown) === (before.transcript[0] as unknown),
@@ -157,9 +131,6 @@ describe("what a token costs on the wire", () => {
 	});
 
 	it("ignores an acknowledgement entry a home written before the outbox went still holds", () => {
-		// The entry kind is retired, and the transcript is append-only: a home that ran the outbox keeps its
-		// `app.delivery` rows forever. They are not the reader's, and a fold that read them would render a status a person
-		// has no use for.
 		const model = createReadModel();
 		const entries = [
 			userEntry(1, "Ship it."),
@@ -175,9 +146,6 @@ describe("what a token costs on the wire", () => {
 	});
 
 	it("ignores a notice entry a home written before the append shape went still holds", () => {
-		// The append shape is retired and the transcript is append-only, so a home that ran an older mason keeps its
-		// `app.notice` entries forever: a medium talking about itself, written by a call the contract no longer has. The
-		// Done-when is this row's absence: no notice row after the append shape is removed.
 		const model = createReadModel();
 		const entries = [
 			userEntry(1, "Ship it."),
@@ -198,8 +166,6 @@ describe("what a token costs on the wire", () => {
 	});
 
 	it("publishes nothing when a commit says nothing to a reader", () => {
-		// A tool result is the machine's business: it changes no row a person reads, so it must not become a revision a
-		// client applies and a diff it cannot see the point of.
 		const model = createReadModel();
 		const entries = [userEntry(1, "Do the thing.")];
 		const first = model.next(viewOf(entries));
@@ -214,8 +180,6 @@ describe("what a token costs on the wire", () => {
 
 describe("the transitions a revision reports", () => {
 	it("reports a commit in the revision right after the one that held the row streaming", () => {
-		// The order one turn can arrive in: a token, then the commit that lands it, with no revision between them. The
-		// previous revision held the row under the id it commits with, streaming — and still nothing had been committed.
 		const model = createReadModel();
 		const question = [userEntry(1, "Is the deploy healthy?")];
 		model.next(viewOf([]));
@@ -288,8 +252,6 @@ describe("the transitions a revision reports", () => {
 			runTaskId: "16",
 		});
 
-		// A run that dies is the other ending, and it is one transition, never both. What says it died is `pi.live`: the
-		// commit that ends a run without an answer records why, and the reason itself stays on the server.
 		const failed = revision(viewOf([userEntry(1, "Do the thing.")], liveDocs("", { taskId: 17 })));
 		assert.deepEqual(kinds(failed), ["run.started"]);
 		const ended = revision(
@@ -313,8 +275,6 @@ describe("the transitions a revision reports", () => {
 	});
 
 	it("keeps a revision's transitions to that revision", () => {
-		// The supervisor's rule, and the reason a client never replays: a snapshot's list describes the snapshot, and the
-		// next revision's list describes only what the next revision changed.
 		const model = createReadModel();
 		model.next(viewOf([]));
 		const first = model.next(viewOf([userEntry(1, "One.")], liveDocs("", { taskId: 16 })));

@@ -26,8 +26,6 @@ test("an events-only connector passes the published conformance suite", async ()
 });
 
 test("the event client's surface is the grant's: no conversation, no control, no submit", async () => {
-	// The combined factory is internal now; the public event client is what an event-only integration builds, and what it
-	// must not have is the point: a transcript it cannot read, a control it cannot spend, words it cannot place.
 	const client = createEventClient({
 		name: "alarm",
 		version: "1.0.0",

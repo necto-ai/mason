@@ -1,34 +1,14 @@
-/**
- * `npm run check:docs` — the word ceiling of every document that carries a fact, measured against the file it names.
- *
- * The documents in this repository are read by an agent in every session, so their length is a cost paid on every turn,
- * and the pressure on a document is always to grow: a new rule arrives, nobody removes the rule it replaced, and the
- * file drifts into a history of itself. A ceiling is the smallest thing that notices. `docs/doc-budgets.json` holds one
- * number per file, the number is today's size rounded up, and it only ever goes down — raising one is a decision the
- * pull request has to argue for (`docs/AGENTS.md`).
- *
- * Two failures, and both name the file: a document over its ceiling, and a manifest entry whose file is gone. The
- * second matters as much as the first — a renamed document that keeps its old ceiling is a document that stopped being
- * measured while the table still says it is.
- *
- * The count is whitespace-split tokens with code fences included: a table row, a shell command and a paragraph all cost
- * what they cost, and a rule with a fence around it is not free.
- */
 import type { Dirent } from "node:fs";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** The repository root: the manifest and the documents both live there. */
 const root = fileURLToPath(new URL("../../..", import.meta.url));
 
-/** Where the ceilings live, relative to the repository root. */
 export const MANIFEST_PATH = "docs/doc-budgets.json";
 
 export interface Manifest {
-	/** A path relative to the repository root, and the most words it may hold. */
 	readonly ceilings: Readonly<Record<string, number>>;
-	/** Documents a script writes. They are as long as the code they describe, so they carry no ceiling. */
 	readonly generated: readonly string[];
 }
 
@@ -36,33 +16,18 @@ export interface Row {
 	readonly file: string;
 	readonly words: number;
 	readonly ceiling: number;
-	/** Words still allowed. Negative when the file is over, which is the failure. */
 	readonly headroom: number;
 }
 
 export interface Audit {
-	/** One row per manifest entry whose file was read, in manifest order. */
 	readonly rows: readonly Row[];
-	/** Entries over their ceiling, as the sentence to print. */
 	readonly over: readonly string[];
-	/** Entries whose file is gone, as the sentence to print. */
 	readonly missing: readonly string[];
-	/** Documents in the tiers the manifest covers that carry no ceiling, as the sentence to print. */
 	readonly unlisted: readonly string[];
 }
 
-/** Directories under `docs/` that hold records rather than documents: a decision, a process, a research run. */
 const EXEMPT_PREFIXES: readonly string[] = ["docs/adr/", "docs/agents/", "docs/research/"];
 
-/**
- * The documents the manifest claims to cover, found by walking rather than by listing.
- *
- * The manifest is the list of ceilings, so a document missing from it is invisible to an audit that only reads the
- * manifest: a new `docs/FOO.md` of any length would pass. This is the set that must be in it — every markdown file in the
- * repository root, and every one under `docs/` except the three directories that are records rather than documents.
- * A subdirectory is walked, not skipped: `docs/plans/HUGE.md` has to carry a ceiling like any other document, and a
- * symlink to a document is one too.
- */
 export function governedDocuments(base: string, manifest: Manifest): string[] {
 	const found: string[] = [];
 	const keep = (path: string): boolean => !manifest.generated.includes(path);
@@ -71,7 +36,6 @@ export function governedDocuments(base: string, manifest: Manifest): string[] {
 		try {
 			entries = readdirSync(join(base, relative), { withFileTypes: true });
 		} catch {
-			// A directory with no `docs/` is a temporary one a test points at; there is nothing to govern.
 			return;
 		}
 		for (const entry of entries) {
@@ -97,17 +61,10 @@ export function governedDocuments(base: string, manifest: Manifest): string[] {
 	return found.sort();
 }
 
-/** The words in a document, as a person counts them while reading it: whitespace-separated tokens. */
 export function countWords(text: string): number {
 	return text.split(/\s+/).filter((word) => word !== "").length;
 }
 
-/**
- * The manifest, validated.
- *
- * A ceiling that is not a positive integer is a typo rather than a budget, and a typo that silently reads as zero would
- * fail every file at once; so it is refused here, by name, instead of at the audit.
- */
 export function readManifest(text: string, from = MANIFEST_PATH): Manifest {
 	let parsed: unknown;
 	try {
@@ -139,11 +96,6 @@ export function readManifest(text: string, from = MANIFEST_PATH): Manifest {
 	return { ceilings: checked, generated };
 }
 
-/**
- * The audit itself, against a directory: what a test can point at a temporary directory, and what the entry point
- * points at this repository. Every entry is read once, and a file that cannot be read is reported as missing rather than
- * thrown, so one renamed document does not hide the three others that are over.
- */
 export function audit(manifest: Manifest, base: string): Audit {
 	const rows: Row[] = [];
 	const over: string[] = [];

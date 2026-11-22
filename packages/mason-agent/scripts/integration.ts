@@ -1,16 +1,3 @@
-/**
- * `npm run integration -- <list|add|remove|enable|disable> …` — the services mason reaches.
- *
- * The config (`src/server/integrations.ts`) is read once at boot, so this command says what the *next* start does: the
- * tool surface and the prompt are decided then, and a list that changed under a running turn would change what the
- * model can do between two messages of one conversation. Editing the file is a restart, and the command says so every
- * time it writes.
- *
- * It edits the entry's MCP server — the endpoint over Streamable HTTP that lends the bot tools. What a connector may do
- * on its socket is its `connector` block, which is edited in the file by hand: the grant, its `commands` and its policy
- * are a person's permission decisions, and `npm run connector` mints the credential for them, not the grant. There is no
- * secret here any more, because the signed event door is gone (#104).
- */
 import { housePaths } from "../src/server/house.ts";
 import {
 	readIntegrations,
@@ -70,7 +57,6 @@ async function list(): Promise<void> {
 	}
 }
 
-/** The controls a grant may spend, or nothing at all: the panel is where they are written, this is where they are read. */
 function controlsOf(integration: { readonly connector?: { readonly commands?: readonly string[] } }): string {
 	const commands = integration.connector?.commands ?? [];
 	return commands.length === 0 ? "" : `, controls ${commands.join(",")}`;
@@ -90,8 +76,6 @@ async function add(): Promise<void> {
 	}
 	const written = await writeIntegration(house, name, {
 		...existing,
-		// A replace moves the endpoint and rewrites the description. The switch and the connector grant are what the
-		// integration *is*, not where its MCP server lives, so they stay as they were.
 		enabled: existing?.enabled ?? true,
 		description,
 		mcp: { ...existing?.mcp, url },
@@ -111,8 +95,6 @@ async function toggle(enabled: boolean): Promise<void> {
 		process.exit(1);
 	}
 	console.log(`${enabled ? "enabled" : "disabled"} ${name}`);
-	// Switching one on can leave two enabled connectors holding a person's words, which the boot refuses: this names the
-	// home the write made, for the same reason `mason chat` does (`assertOneUserGrant` is the boot's).
 	const note = enabled ? secondUserGrantNote((await readIntegrations(house)).integrations) : undefined;
 	if (note !== undefined) console.log(note);
 	console.log("The list is read once at boot: start the server again for this to take effect.");
@@ -129,8 +111,6 @@ async function remove(): Promise<void> {
 	console.log("The list is read once at boot: start the server again for this to take effect.");
 }
 
-// A refusal from the config module is the operator's message, not a stack trace: the message names the path and the
-// entry, which is what a person has to fix.
 try {
 	if (command === "list") await list();
 	else if (command === "add") await add();

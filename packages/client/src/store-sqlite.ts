@@ -1,14 +1,5 @@
-/**
- * The reference production store: one SQLite file, `node:sqlite` underneath.
- *
- * `node:sqlite` is loaded dynamically and only here, so a connector that ships its own store never pays for it, and this
- * module can be imported on a Node where it is behind a flag. Node 22 needs `--experimental-sqlite`; Node 24 does not.
- * When the module is missing the constructor says so in one sentence instead of throwing a resolution error nobody can
- * read.
- */
 import type { ConnectorStore, StoreEntry } from "./store.ts";
 
-/** The slice of `node:sqlite`'s `DatabaseSync` this file uses, so the module does not depend on its types being present. */
 interface DatabaseSyncLike {
 	exec(sql: string): void;
 	prepare(sql: string): {
@@ -24,7 +15,6 @@ interface SqliteModule {
 }
 
 export interface SqliteStoreOptions {
-	/** The file. `:memory:` is allowed and is then no more durable than `MemoryStore`, which the caller should know. */
 	readonly path: string;
 	readonly now?: () => number;
 }
@@ -90,7 +80,6 @@ export class SqliteStore implements ConnectorStore {
 	}
 }
 
-/** Open the file and hand back a store. The only async step is loading `node:sqlite`, which is why this is a factory. */
 export async function openSqliteStore(options: SqliteStoreOptions): Promise<ConnectorStore> {
 	let sqlite: SqliteModule;
 	try {

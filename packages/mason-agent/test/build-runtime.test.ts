@@ -1,10 +1,3 @@
-/**
- * `scripts/build-runtime.ts` — the build the published package ships.
- *
- * The vendoring is the part that quietly ships the wrong thing if it drifts, so the tests pin its two decisions: the
- * emitted module text is the only thing a workspace copy is vendored for (a quoted name that is not an import, like the
- * auth realm, moves no files), and the copy that ships is build output only, never TypeScript source.
- */
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -29,7 +22,6 @@ test("vendoredNames() reads imports, not every string a module happens to quote"
 });
 
 test("vendoredNames() leaves a quoted name that is no import alone", () => {
-	// main.ts answers an unauthenticated socket with this realm; the name in it is prose, not an import.
 	const realm = 'response.setHeader("www-authenticate", \'Bearer realm="mason-client"\');';
 	assert.deepEqual(vendoredNames([realm]), []);
 });

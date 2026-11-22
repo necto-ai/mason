@@ -1,11 +1,3 @@
-/**
- * The message path, from the model's text to the reader's row, and the extension that holds a submission turn to it.
- *
- * There is no tool whose call is a delivery any more: an assistant generation's text is the message, and the projection
- * is the only thing that turns it into a row. What this file pins is the registration facts that remain — no delivery
- * tool, both gates, the base extension the repair keeps — and one real turn, answered by the faux provider, whose row is
- * the message and whose gate does not have to rescue it.
- */
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -27,12 +19,6 @@ import {
 } from "../src/server/runtime.ts";
 import { DELIVERY_REMINDER, REPLY_ENTRY_KIND } from "../src/shared/contract.ts";
 
-/**
- * Every extension a boot installs unconditionally, in order: the base list, then the ones `openAgentRuntime` builds per
- * boot — delegation and code mode here, since this home has no integration. `openRuntime` below writes nothing to an MCP
- * server, so the per-boot part is those two; they are named rather than assumed, and the runtime's own list is what is
- * asserted against, so a base extension added later is covered without a second list going stale.
- */
 const BOOT_EXTENSIONS: readonly string[] = unconditionalExtensionNames(PER_BOOT_EXTENSIONS);
 
 test("delivery carries the two gates and no tool: the message is the text the model wrote", () => {
@@ -43,35 +29,28 @@ test("delivery carries the two gates and no tool: the message is the text the mo
 		BASE_EXTENSIONS.some((extension) => extension.name === Delivery.name),
 		"every conversation's turn is held to the message path",
 	);
-	// The six declared tools are the four coding tools, `delegate` and `codemode`; nothing named `send` exists to be
-	// registered, and no prompt can name one.
 	const declared = BASE_EXTENSIONS.flatMap((extension) => (extension.tools ?? []).map((tool) => tool.name));
 	assert.deepEqual(declared, ["read", "write", "edit", "bash"]);
 });
 
-/** The same agent over the same storage in the same directory: a restart. */
 function openRuntime(directory: string): Promise<AgentRuntime> {
 	return openAgentRuntime(BACKGROUND_CONTEXT, {
 		dataDir: join(directory, "data"),
 		workspaceDir: directory,
-		// A temporary home: the runtime creates `soul.md`, `log/` and `skills/` there, never in the real `~/.mason`.
 		houseHome: join(directory, "house"),
 		faux: true,
 		onReport: () => {},
 	});
 }
 
-/** The selection as it is stored, not as it is resolved. */
 async function storedSelection(runtime: AgentRuntime): Promise<unknown> {
 	const root = await runtime.conversation();
 	return root.commit(async (tx) => {
-		// The doc is a live overlay, so it is copied into plain JSON inside the transaction that reads it.
 		const stored = (await tx.doc(AgentDoc, root.id)).extensions;
 		return JSON.parse(JSON.stringify(stored)) as unknown;
 	}, BACKGROUND_CONTEXT);
 }
 
-/** The names of the entries a conversation has, so a repair that writes nothing is visible as nothing. */
 async function entryCount(runtime: AgentRuntime): Promise<number> {
 	const root = await runtime.conversation();
 	const page = await root.entries({}, 1000, undefined, BACKGROUND_CONTEXT);
@@ -83,8 +62,6 @@ test("a selection stored before delivery existed still speaks after a reopen", a
 	try {
 		const before = await openRuntime(directory);
 		try {
-			// A `pi.agent` doc from before slice 1: an explicit array of names, without `delivery`. A stored array is
-			// used verbatim, so nothing else brings delivery back.
 			const root = await before.conversation();
 			await root.configure({ extensions: [CodingTools, Prompt] }, BACKGROUND_CONTEXT);
 		} finally {
@@ -117,8 +94,6 @@ test("a selection missing several base names gets them back in base order", asyn
 	try {
 		const before = await openRuntime(directory);
 		try {
-			// Only `coding-tools` is stored: every other base name is missing, so the order they are put back in is the
-			// whole assertion.
 			const root = await before.conversation();
 			await root.configure({ extensions: [CodingTools] }, BACKGROUND_CONTEXT);
 		} finally {
@@ -146,8 +121,6 @@ test("a selection stored as an edit is left as it is", async () => {
 	try {
 		const before = await openRuntime(directory);
 		try {
-			// An edit, not a list: `{ remove }` already unions with the base selection, so it needs nothing and must
-			// keep its shape. Turning it into a list would add `prompt` back and undo the edit.
 			const root = await before.conversation();
 			await root.configure({ extensions: { remove: [Prompt] } }, BACKGROUND_CONTEXT);
 		} finally {
@@ -206,7 +179,6 @@ test("a submission answered in prose produces one message row, and the gate has 
 				["ok"],
 				"the faux provider's text answer is the reader's one message",
 			);
-			// The gate counts the row, so it does not remind and the turn is not marked silent.
 			assert.equal(
 				transcript.some((row) => row.kind === "delivered" && row.streaming === true),
 				false,
@@ -234,8 +206,6 @@ test("a submission answered in prose produces one message row, and the gate has 
 });
 
 test("a home written before the cut still shows the message its app.reply entry committed", () => {
-	// Read-only history. No turn writes one any more, but the records are on disk and a reader who upgrades still sees
-	// what was said, under the id it was said with.
 	const view = {
 		conversation: { id: 1 },
 		entries: [

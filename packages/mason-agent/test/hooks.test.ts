@@ -1,16 +1,3 @@
-/**
- * What wakes the bot, and what each wake is.
- *
- * A fire has an identity and the caller owns it, because only the caller knows what "the same event" means: a sender
- * that names its delivery is exact and permanent, a schedule is one fire per slot, and a gesture is a fire of its own.
- * The key builders are pinned here as pure functions, and the durable consequence — a second fire with a known key adds
- * no submission — is pinned against the real conversation, whose `requestId` dedupe is what makes any of it true.
- *
- * Events and routines are the other half. They come from `agent/events.json`, the agent edits it, and a deployment ships
- * none: an absent file is zero wakes, a malformed file keeps the last good set and is reported once, and the boot scan
- * waits the remainder of a persisted `nextFireAt` instead of arming a fresh slot. A slot the process missed while it
- * was down fires once, however long the downtime was.
- */
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -34,14 +21,12 @@ import type { AgentRuntime } from "../src/server/runtime.ts";
 import { openAgentRuntime } from "../src/server/runtime.ts";
 import { HOOK_ENTRY_KIND } from "../src/shared/contract.ts";
 
-/** A clock the test moves by hand: fire identity is about time, so time is an input here, not a wait. */
 interface TestClock {
 	now(): Date;
 	at(): number;
 	advance(ms: number): void;
 }
 
-/** Half a second past a minute boundary: a slot boundary with room on both sides. */
 const ALIGNED_START = "2026-10-19T09:00:00.500Z";
 
 function testClock(startIso: string): TestClock {
@@ -55,12 +40,10 @@ function testClock(startIso: string): TestClock {
 	};
 }
 
-/** A throwaway home: the suite must never create or read the developer's `~/.mason`. */
 function tempHouse(): Promise<string> {
 	return mkdtemp(join(tmpdir(), "pda-hooks-"));
 }
 
-/** What every identity test fires. No interval: nothing schedules it, so only the test's own calls submit. */
 const digest = {
 	id: "digest",
 	name: "Digest",
@@ -70,14 +53,8 @@ const digest = {
 	fireCount: 0,
 };
 
-/** The same hook on an hourly schedule, for the slot key. */
 const hourlyDigest = { ...digest, intervalMs: 60 * 60 * 1_000 };
 
-/**
- * A hooks manager over a real conversation, on a clock the test drives. pi-durable's admission is the dedupe: a known
- * request id returns the submission it already made and writes nothing, so "one submission" here means one `app.hook`
- * entry in the transcript.
- */
 async function withFiringManager(
 	run: (hooks: HooksManager, runtime: AgentRuntime, clock: TestClock) => Promise<void>,
 ): Promise<void> {
@@ -147,14 +124,12 @@ describe("a fire's identity", () => {
 			const first = await hooks.fire("digest", { payload: "a", requestId });
 			await first.wait(BACKGROUND_CONTEXT);
 
-			// Three days later, the same delivery id: still the same event, however far behind the sender's queue is.
 			clock.advance(3 * 24 * 60 * 60 * 1_000);
 			const again = await hooks.fire("digest", { payload: "a", requestId });
 			assert.equal(again.id, first.id, "the same delivery is the same submission");
 			assert.equal(await hookEntryCount(runtime), 1);
 			assert.equal(hooks.get("digest")?.fireCount, 2, "a fire a known key collapsed still counts as an attempt");
 
-			// Another delivery id is another event, even with an identical payload.
 			const other = await hooks.fire("digest", {
 				payload: "a",
 				requestId: explicitRequestId("digest", "delivery-8"),
@@ -181,7 +156,6 @@ describe("a fire's identity", () => {
 		await withFiringManager(async (hooks, runtime, window) => {
 			const first = await hooks.fire("digest", { requestId: scheduledRequestId(hourlyDigest.id, window.at()) });
 			await first.wait(BACKGROUND_CONTEXT);
-			// A second arm of the same timer, inside the slot: the slot is already spent.
 			const rearm = await hooks.fire("digest", { requestId: scheduledRequestId(hourlyDigest.id, window.at()) });
 			assert.equal(rearm.id, first.id);
 			assert.equal(await hookEntryCount(runtime), 1);
@@ -190,8 +164,6 @@ describe("a fire's identity", () => {
 
 	it("is fresh for a gesture, so a click is an intent and two clicks are two fires", async () => {
 		await withFiringManager(async (hooks, runtime) => {
-			// Both fires share one frozen millisecond, and a restart would reset any counter: only a fresh id per
-			// gesture keeps two presses apart, however close together they land.
 			const first = await hooks.fire("digest", { payload: "retry" });
 			await first.wait(BACKGROUND_CONTEXT);
 			const second = await hooks.fire("digest", { payload: "retry" });
@@ -246,7 +218,6 @@ describe("a fire's marker", () => {
 	});
 });
 
-// These two run a sub-minute interval so arming is observable without waiting a minute.
 describe("a disabled hook", () => {
 	it("is not armed by startup walking every hook", async () => {
 		await withRuntime(async (runtime) => {
@@ -289,7 +260,6 @@ describe("a disabled hook", () => {
 });
 
 describe("agent/events.json", () => {
-	/** A directory holding the agent half (the file) and the data half (the persisted state). */
 	async function eventHome(): Promise<{
 		readonly agent: string;
 		readonly data: string;
@@ -317,7 +287,6 @@ describe("agent/events.json", () => {
 		}
 	}
 
-	/** Waits for an edit to reach the manager, through the watcher, that re-reads the file. */
 	async function waitUntil(what: string, expect: () => boolean): Promise<void> {
 		const deadline = Date.now() + 5_000;
 		while (!expect() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
@@ -737,13 +706,6 @@ describe("agent/events.json", () => {
 	});
 });
 
-/**
- * Nothing in a hook's instruction names a vendor's tool.
- *
- * `reply` is the one operation, and the origin a fire carries is the address. This is a property of the one runtime
- * template left — the supervisor's retry — because the agent's own routines are its words: parsing them is parsing
- * prose. The routine file, not this repository, holds what the agent says to itself.
- */
 describe("the tool a hook's turn answers with", () => {
 	it("names reply, and no vendor's tool, in the supervisor's instruction", async () => {
 		const { RETRY_HOOK } = await import("../src/server/run-retry.ts");
@@ -772,13 +734,6 @@ describe("the tool a hook's turn answers with", () => {
 	});
 });
 
-/**
- * Where a fire lands when the conversation is already working.
- *
- * The fire's placement is `admission.ts`'s decision, and this is the half a unit test cannot see: that the decision
- * reaches pi-durable and becomes a real boundary placement. The regression it pins is the one that cost a reader half
- * an hour — a correction sent while the agent worked, queued behind the work it was cancelling.
- */
 describe("a fire's placement", () => {
 	function liveOf(view: ConversationView | undefined) {
 		return view?.docs["pi.live"] as
@@ -805,7 +760,6 @@ describe("a fire's placement", () => {
 		const models = createModels();
 		models.setProvider(faux.provider);
 		faux.setResponses([
-			// One tool round that outlasts the fire, so the conversation is busy when it arrives.
 			fauxAssistantMessage([fauxToolCall("bash", { command: "sleep 1.5" }, { id: "slow" })], {
 				stopReason: "toolUse",
 			}),
@@ -838,8 +792,6 @@ describe("a fire's placement", () => {
 			);
 			assert.equal(queued.mode, "steer", "the fire joins the run in flight instead of waiting for it to end");
 
-			// And the running turn reads it: the fire is placed at the boundary right after the tool round, so the run in
-			// flight is the one that answered it rather than a turn that started once it was over.
 			await conversation.waitForIdle(BACKGROUND_CONTEXT);
 			const page = await conversation.entries({ order: "ascending" }, 50, undefined, BACKGROUND_CONTEXT);
 			const order = page.items.map((entry) => entry.kind);
@@ -916,8 +868,6 @@ describe("the events file's validation", () => {
 		);
 	});
 
-	// The run supervisor's retry lifecycle hook occupies the id in code; the file cannot take it, and a file that
-	// does is one malformed notice, not a fatal boot.
 	it("rejects the id the run supervisor's retry lifecycle hook occupies", () => {
 		assert.throws(
 			() =>

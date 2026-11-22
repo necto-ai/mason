@@ -1,9 +1,3 @@
-/**
- * Attachments: bytes cross as a content id, over an endpoint the connector authenticates with its own credential.
- *
- * The refusals the protocol names are pinned here — no credential, a body over the cap, and a byte-fetch the endpoint
- * does not answer because there is no such route.
- */
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -27,15 +21,10 @@ import {
 
 const BYTES = new TextEncoder().encode("a photograph, allegedly");
 
-/**
- * The device's home for the local tests: `~` is where a person's inbox goes, and a local daemon resolves it from this
- * process's `HOME`. The ssh target resolves `~` from the remote login's own home, so its test asks the target instead.
- */
 const deviceHome = await mkdtemp(join(tmpdir(), "mason-device-home-"));
 process.env.HOME = deviceHome;
 after(() => rm(deviceHome, { recursive: true, force: true }));
 
-/** A PNG header with the width and height pi's inline ceiling reads: 1×1 unless a test says otherwise. */
 function png(width: number, height: number): Buffer {
 	const bytes = Buffer.alloc(33);
 	Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(bytes, 0);
@@ -46,7 +35,6 @@ function png(width: number, height: number): Buffer {
 	return bytes;
 }
 
-/** The request the model was handed, captured from the faux provider's own step. */
 function recorder(
 	seen: Message[],
 ): (context: { readonly messages: readonly Message[] }) => ReturnType<typeof fauxAssistantMessage> {
@@ -84,7 +72,6 @@ describe("the attachment endpoint", () => {
 			try {
 				const upload = await connected.connector.attachments.upload(BYTES, { mimeType: "image/jpeg" });
 
-				// Over the cap: `413`, and nothing stored.
 				const tooBig = await fetch(`${served.base}/api/connector/attachments`, {
 					method: "POST",
 					headers: { authorization: `Bearer ${served.credential}`, "content-type": "text/plain" },
@@ -92,8 +79,6 @@ describe("the attachment endpoint", () => {
 				});
 				assert.equal(tooBig.status, 413);
 
-				// There is no read-back route: a credentialed GET under the upload path is the same `404` as a path mason does
-				// not serve, which is what keeps a content id from being fetched by a holder of the credential alone.
 				const readBack = await fetch(`${served.base}/api/connector/attachments/${upload.contentId}`, {
 					headers: { authorization: `Bearer ${served.credential}` },
 				});
@@ -114,7 +99,6 @@ describe("the attachment endpoint", () => {
 				const limits = connected.connector.status().session?.limits;
 				assert.equal(limits?.attachmentBytes, 1024);
 				assert.equal(limits?.attachmentTtlMs, 60_000);
-				// The SDK's own guard reads the negotiated number, so a file over it never reaches the wire.
 				await assert.rejects(
 					connected.connector.attachments.upload(new Uint8Array(1025)),
 					(error: { status?: number }) => error.status === 413,
@@ -169,7 +153,6 @@ describe("a submission with a file", () => {
 				assert.match(String(content), /\[file: ~\/inbox\/cnt_[0-9a-f]{32}\/shot\.png — image\/png, 33 bytes\]/);
 				assert.ok(!JSON.stringify(entry).includes(shot.toString("base64")), "no base64 is committed");
 
-				// The request is where the image lives: the same bytes, for the model to see without a tool call.
 				await until(
 					() => seen.some((message) => message.role === "user" && Array.isArray(message.content)),
 					"the request",
@@ -342,8 +325,6 @@ describe("the bytes on the way out and back", () => {
 						name: "brief.txt",
 					},
 				);
-				// A replacement of the same length is not the sender's file any more. The sidecar still names it; only the
-				// hash can tell, which is the branch this pins.
 				await writeFile(
 					join(served.server.runtime.dataDir, "attachments", "telegram", upload.contentId),
 					"the brief, in fulL",
@@ -372,8 +353,6 @@ describe("the bytes on the way out and back", () => {
 					mimeType: "text/plain",
 					name: "note.txt",
 				});
-				// The SDK's answer is the identity a row carries, and the route serves exactly those bytes. Fetch before
-				// anything else waits: this store's retention is forty milliseconds in this test.
 				assert.equal(upload.size, bytes.byteLength);
 				assert.match(upload.contentId, /^cnt_[0-9a-f]{32}$/);
 				const response = await fetch(`${served.base}/api/connector/assets/${upload.contentId}`, {
@@ -385,7 +364,6 @@ describe("the bytes on the way out and back", () => {
 				assert.equal(response.headers.get("content-length"), String(bytes.byteLength));
 				assert.match(response.headers.get("content-disposition") ?? "", /^attachment; filename="note\.txt"/);
 
-				// Over the cap is `413`; an id that is not there is `404`; no credential is `401`; an event grant is `403`.
 				const tooBig = await fetch(`${served.base}/api/connector/attachments`, {
 					method: "POST",
 					headers: { authorization: `Bearer ${served.credential}`, "content-type": "text/plain" },
@@ -403,7 +381,6 @@ describe("the bytes on the way out and back", () => {
 				});
 				assert.equal(eventGrant.status, 403);
 
-				// The same id after its retention is `410`, and the row that named it is not what expired.
 				await new Promise((done) => setTimeout(done, 60));
 				const expired = await fetch(`${served.base}/api/connector/assets/${upload.contentId}`, {
 					headers: { authorization: `Bearer ${served.credential}` },
@@ -426,8 +403,6 @@ describe("a file whose bytes changed before the turn", () => {
 		const held = new Promise<void>((resolve) => {
 			release = resolve;
 		});
-		// The turn cannot resolve its machine until the bytes have been replaced, which is the state a corrupt store is
-		// in when a turn starts: the sidecar still names the upload, and the bytes are not the ones it recorded.
 		const inner: RuntimeEnvManager = createRuntimeEnvManager({ cwd: await temporaryDirectory() });
 		const env: RuntimeEnvManager = {
 			async envFor(input: { conversationId: string; cwd?: string }) {
@@ -584,9 +559,6 @@ describe("a submission on a non-local target", () => {
 
 	it("lands in the target's inbox through the environment, and only once the turn starts", { skip }, async () => {
 		if (ssh === undefined) return;
-		// The device's home is its own directory, not the server's workspace: a file at one path and not the other is
-		// what proves the bytes crossed the environment boundary rather than a `writeFile`. The cwd is the device's `~`,
-		// which is what `runtime.ts` gives a device target.
 		const inner: RuntimeEnvManager = createRuntimeEnvManager({ cwd: "~", ssh });
 		let release: (() => void) | undefined;
 		const held = new Promise<void>((resolve) => {
@@ -616,8 +588,6 @@ describe("a submission on a non-local target", () => {
 					content: [{ type: "file", contentId: upload.contentId, name: "shot.txt" }],
 				});
 				assert.equal(outcome.status, "accepted");
-				// The turn is held before its environment resolves, so this is the submit path alone. `~` here is the
-				// target's own home, the path the model's line names.
 				assert.equal(
 					(await target.fileInfo(file, BACKGROUND_CONTEXT)).ok,
 					false,
@@ -641,10 +611,8 @@ describe("a submission on a non-local target", () => {
 			}
 		} finally {
 			release?.();
-			// The target's home is a real home, not a temp directory: a proof cleans up the one directory it made.
 			if (cleanup !== undefined) {
 				await target.remove(cleanup, { recursive: true, force: true }, BACKGROUND_CONTEXT);
-				// `~/inbox` is shared by every upload; remove it only when this proof left it empty.
 				const inbox = dirname(cleanup);
 				const listed = await target.listDir(inbox, BACKGROUND_CONTEXT);
 				if (listed.ok && listed.value.length === 0) {

@@ -1,19 +1,3 @@
-/**
- * The device's checkout: the host's memory, carried across the channel as git bundles.
- *
- * ADR-0002's mount is gone. A device holds `~/agent`, a checkout of the host's repository, and the host holds the
- * repository no tool mounts. Git is the sync protocol because it already knows how to send history, and a bundle is
- * bytes: the frames pi-env carries, not a second ssh credential pointed back at the host (which would restore the
- * credential the split removed).
- *
- * A turn is one sync in each direction. `pull` runs before the first request: the host's tip is fetched into the
- * checkout and hard-reset, so the guest starts from what the host accepted. `accept` runs when the turn answers: the
- * checkout's commits are bundled back, the host validates the incoming memory (`memory-check.ts`) and fast-forwards.
- * Two sides may author history — the agent in the checkout, the person on the host — so a host that moved during the
- * turn leaves the guest's commits on a ref and the next pull merges them: one history, the person's intent kept.
- *
- * A lost device throws `DeviceLostError` and is never retried: a mutation whose outcome is unknown cannot be replayed.
- */
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
@@ -29,10 +13,8 @@ import { checkIncoming } from "./memory-check.ts";
 
 const run = promisify(execFile);
 
-/** The extension's name, as the surface document renders it. */
 export const CHECKOUT_EXTENSION_NAME = "checkout";
 
-/** What a pull did to the checkout. */
 export type PullResult =
 	| { readonly status: "pulled" }
 	| { readonly status: "unchanged" }
@@ -41,7 +23,6 @@ export type PullResult =
 	| { readonly status: "blocked"; readonly detail: string }
 	| { readonly status: "lost"; readonly detail: string };
 
-/** What an accept did with the checkout's commits. */
 export type AcceptResult =
 	| { readonly status: "accepted"; readonly commits: number }
 	| { readonly status: "up-to-date" }
@@ -51,27 +32,13 @@ export type AcceptResult =
 	| { readonly status: "lost"; readonly detail: string };
 
 export interface CheckoutOptions {
-	/** The host's repository: the durable memory, and the ref a pull starts from. */
 	readonly host: string;
-	/** The checkout on the device, `~/agent`. */
 	readonly deviceAgentDir: string;
-	/** The branch both sides commit to. */
 	readonly branch: string;
-	/** `false` for a local run: the tools already write the host's own tree, and there is nothing to carry. */
 	readonly enabled?: boolean;
 	readonly onLog?: (line: string) => void;
 }
 
-/**
- * The host's current branch, or `CREATED_BRANCH` for a host mason made whose `HEAD` names no branch at all.
- *
- * The name comes from the repository, never from the machine: a repository mason created is `CREATED_BRANCH` by
- * construction (`house.ts`), and one it adopted keeps the person's branch — `master` included, because renaming a
- * history nobody asked mason to touch is not a sync.
- *
- * A detached `HEAD` is refused rather than guessed: a checkout follows a branch, and fast-forwarding a detached host
- * would move a commit no branch names. An empty repository is a first boot, not an error.
- */
 export async function hostBranch(host: string): Promise<string> {
 	try {
 		const { stdout } = await run("git", ["-C", host, "symbolic-ref", "--short", "HEAD"]);
@@ -95,15 +62,12 @@ interface GuestRun {
 	readonly stderr: string;
 }
 
-/** The host-side refusal a detached `HEAD` gets mid-run, matching `hostBranch`'s boot refusal. */
 const DETACHED_HOST = "The host's agent/ is a detached HEAD. Check out a branch there before the next turn.";
 
-/** A failure as one line, for a status the model or the log reads. */
 function reason(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
-/** One host git command, with its output. */
 async function hostGit(host: string, args: readonly string[]): Promise<string> {
 	const { stdout } = await run("git", ["-C", host, ...args], { maxBuffer: 32 * 1024 * 1024 });
 	return stdout;
@@ -115,7 +79,6 @@ export class Checkout {
 	readonly #branch: string;
 	readonly #enabled: boolean;
 	readonly #onLog: (line: string) => void;
-	/** One sync at a time on one host: two conversations share the repository and its index. */
 	#queue: Promise<unknown> = Promise.resolve();
 
 	constructor(options: CheckoutOptions) {
@@ -130,7 +93,6 @@ export class Checkout {
 		return this.#enabled;
 	}
 
-	/** Run `sync` after every earlier one, whether that one succeeded or failed. */
 	async #serialize<T>(sync: () => Promise<T>): Promise<T> {
 		const run = this.#queue.then(sync, sync);
 		this.#queue = run.then(
@@ -140,19 +102,10 @@ export class Checkout {
 		return run;
 	}
 
-	/** The device home: `~/agent`'s parent. */
 	get #deviceHome(): string {
 		return dirname(this.#deviceAgentDir);
 	}
 
-	/**
-	 * A sync failure is a named result, not a throw.
-	 *
-	 * `beforeRequest` can name it in the request, and `onYield`/`afterRun` can leave the answer already committed: a
-	 * throw here would become an `extension_error` after the person's message, which is the unnamed failure the issue
-	 * is about. A dropped device is `lost`; every other failure is `blocked` and says what the host or the checkout
-	 * refused.
-	 */
 	async #named<T extends PullResult | AcceptResult>(sync: Promise<T>): Promise<T> {
 		try {
 			return await sync;
@@ -163,7 +116,6 @@ export class Checkout {
 		}
 	}
 
-	/** One git command in the checkout, its exit code and its streams. */
 	async #git(env: ExecutionEnv, args: readonly string[], context: Context): Promise<GuestRun> {
 		let stdout = "";
 		let stderr = "";
@@ -184,7 +136,6 @@ export class Checkout {
 		return { code: result.value.exitCode, stdout, stderr };
 	}
 
-	/** A git command that must succeed, or the sentence naming what failed. */
 	async #must(env: ExecutionEnv, args: readonly string[], context: Context): Promise<GuestRun> {
 		const result = await this.#git(env, args, context);
 		if (result.code !== 0) {
@@ -193,13 +144,6 @@ export class Checkout {
 		return result;
 	}
 
-	/**
-	 * Carry the host's tip into the checkout.
-	 *
-	 * A first pull initialises the checkout and resets it to the host's tip. A later pull hard-resets when the guest has
-	 * nothing the host lacks, leaves a guest that is ahead alone, and merges when both sides committed: the merge is
-	 * where a person's mid-turn edit becomes one history, and a conflict is the model's to resolve.
-	 */
 	async pull(env: ExecutionEnv, context: Context): Promise<PullResult> {
 		if (!this.#enabled) return { status: "unchanged" };
 		return this.#serialize(() => this.#named(this.#pull(env, context)));
@@ -213,14 +157,8 @@ export class Checkout {
 		} catch (error) {
 			return { status: "blocked", detail: `the host could not commit the person's edit: ${reason(error)}` };
 		}
-		// A pull before every model request would ship a bundle each round. The prompt's own prepare already pulled, so
-		// an equal head is the common case: answer it from two `rev-parse`s.
 		const hostHead = await hostGit(this.#host, ["rev-parse", "--verify", "--quiet", "HEAD"]).catch(() => undefined);
-		// An unborn host has no bytes to carry: `ensureRepository` commits the first tree, and a repository whose first
-		// commit never landed is repaired by the next person's edit, not by refusing every turn.
 		if (hostHead === undefined) return { status: "unchanged" };
-		// A device that lost its accept keeps its last turn's writes dirty. Commit them before comparing heads: a commit
-		// is the only thing a bundle can carry, and a `reset --hard` below would otherwise discard the writes silently.
 		await this.#commitGuestEdits(env, context);
 		const guestHead = await this.#git(env, ["rev-parse", "--verify", "--quiet", "HEAD"], context);
 		if (guestHead.code === 0 && guestHead.stdout.trim() === hostHead.trim()) return { status: "unchanged" };
@@ -240,8 +178,6 @@ export class Checkout {
 			await this.#writeBundle(env, incoming, bundle, context);
 			const repo = await this.#git(env, ["rev-parse", "--git-dir"], context);
 			if (repo.code !== 0) await this.#must(env, ["init", "--quiet"], context);
-			// The device has no global git config, and a commit without an identity fails: set it on every pull, because a
-			// checkout a person cloned by hand has the repository but not the identity.
 			await this.#identity(env, context);
 			await this.#must(
 				env,
@@ -255,7 +191,6 @@ export class Checkout {
 				this.#onLog(`[checkout] checked out ${remote} at ${this.#deviceAgentDir}`);
 				return { status: "pulled" };
 			}
-			// The checkout is the same commit the host has: nothing to do, and `reset --hard` would only touch mtimes.
 			const headSha = (await this.#must(env, ["rev-parse", "HEAD"], context)).stdout.trim();
 			const remoteSha = (await this.#must(env, ["rev-parse", remote], context)).stdout.trim();
 			if (headSha === remoteSha) return { status: "unchanged" };
@@ -267,14 +202,10 @@ export class Checkout {
 			}
 			const remoteIsOld = await this.#git(env, ["merge-base", "--is-ancestor", remote, "HEAD"], context);
 			if (remoteIsOld.code === 0) {
-				// The checkout is ahead: the previous turn's accept did not land (a validation refusal, a host that moved).
-				// Its commits are the truth this turn will offer again; a reset here would delete them.
 				return { status: "diverged", detail: "the checkout is ahead of the host" };
 			}
 			const merged = await this.#git(env, ["merge", "--quiet", "--no-edit", remote], context);
 			if (merged.code !== 0) {
-				// A merge can refuse without starting one: local changes would be overwritten, or the histories are
-				// unrelated. Only unmerged paths are the conflict reminder's to resolve.
 				const unmerged = await this.#git(env, ["diff", "--name-only", "--diff-filter=U"], context);
 				if (unmerged.code === 0 && unmerged.stdout.trim() === "") {
 					return {
@@ -294,12 +225,6 @@ export class Checkout {
 		}
 	}
 
-	/**
-	 * Offer the checkout's commits to the host, and accept the ones the memory rules allow.
-	 *
-	 * The host fast-forwards only: a host that moved during the turn is reported as diverged, and the next pull merges
-	 * it into the checkout, so the model resolves the one history rather than the host rewriting it.
-	 */
 	async accept(env: ExecutionEnv, context: Context): Promise<AcceptResult> {
 		if (!this.#enabled) return { status: "up-to-date" };
 		return this.#serialize(() => this.#named(this.#accept(env, context)));
@@ -312,8 +237,6 @@ export class Checkout {
 		if (repo.code !== 0) return { status: "up-to-date" };
 		const head = await this.#git(env, ["rev-parse", "--verify", "--quiet", "HEAD"], context);
 		if (head.code !== 0) return { status: "up-to-date" };
-		// A commit is accepted from whatever branch the model is on, as long as it is a branch: the host fast-forwards
-		// its own branch to that commit. A detached HEAD has no ref a bundle can carry, so it is the one shape refused.
 		const branch = await this.#git(env, ["symbolic-ref", "--short", "HEAD"], context);
 		if (branch.code !== 0) {
 			return {
@@ -322,8 +245,6 @@ export class Checkout {
 			};
 		}
 		const guestBranch = branch.stdout.trim();
-		// A turn that wrote the memory but did not commit it still wrote it; the host accepts commits, so the end of
-		// the turn is the last moment that work can become one.
 		await this.#commitGuestEdits(env, context);
 		const stray = await this.#strayGuestBranch(env, context);
 		if (stray !== undefined) {
@@ -359,8 +280,6 @@ export class Checkout {
 			const hostTip = await hostGit(this.#host, ["rev-parse", "--verify", "--quiet", "HEAD"])
 				.then((sha) => sha.trim())
 				.catch(() => undefined);
-			// The host has no first commit yet: the guest's tree becomes it, validated against the empty tree. This is
-			// the shape a boot leaves behind when `ensureRepository` found a `.git` whose first commit never landed.
 			if (hostTip === undefined) {
 				const emptyTree = (await hostGit(this.#host, ["hash-object", "-w", "-t", "tree", "/dev/null"])).trim();
 				let problems: string[];
@@ -408,7 +327,6 @@ export class Checkout {
 		}
 	}
 
-	/** Delete the per-accept refs the host fetch wrote, so a stale tip can never be read as this turn's. */
 	async #dropRefs(namespace: string): Promise<void> {
 		try {
 			const refs = (await hostGit(this.#host, ["for-each-ref", "--format=%(refname)", namespace]))
@@ -416,12 +334,9 @@ export class Checkout {
 				.map((ref) => ref.trim())
 				.filter((ref) => ref !== "");
 			for (const ref of refs) await hostGit(this.#host, ["update-ref", "-d", ref]);
-		} catch {
-			// The next accept writes a new namespace; cleanup is not worth failing a turn over.
-		}
+		} catch {}
 	}
 
-	/** Remove a bundle from the device home, naming a failed cleanup instead of swallowing it. */
 	async #removeTemp(env: ExecutionEnv, path: string, context: Context): Promise<void> {
 		try {
 			const removed = await env.remove(path, { force: true }, context);
@@ -433,12 +348,10 @@ export class Checkout {
 		}
 	}
 
-	/** The host's symbolic HEAD, or `undefined` when a person left the repository detached mid-run. */
 	async #hostBranchRef(): Promise<string | undefined> {
 		return hostGit(this.#host, ["symbolic-ref", "--quiet", "HEAD"]).catch(() => undefined);
 	}
 
-	/** Whether `ancestor` is an ancestor of `descendant` in the host's repository. */
 	async #hostAncestor(ancestor: string, descendant: string): Promise<boolean> {
 		try {
 			await run("git", ["-C", this.#host, "merge-base", "--is-ancestor", ancestor, descendant]);
@@ -448,13 +361,6 @@ export class Checkout {
 		}
 	}
 
-	/**
-	 * A person's edit is committed on the host before either direction, labelled as theirs.
-	 *
-	 * The agent cannot write the host's tree — no tool mounts it — so anything uncommitted here is a hand edit. It is
-	 * committed rather than carried as a dirty tree, because a bundle carries commits and a dirty tree would make the
-	 * host's tip a lie.
-	 */
 	async #commitHostEdits(): Promise<void> {
 		const dirty = (await hostGit(this.#host, ["status", "--porcelain"])).trim();
 		if (dirty === "") return;
@@ -475,7 +381,6 @@ export class Checkout {
 		this.#onLog("[checkout] committed the person's edit on the host");
 	}
 
-	/** A bundle of every host ref, as bytes the channel carries. */
 	async #hostBundle(): Promise<Uint8Array> {
 		const temporary = join(tmpdir(), `mason-pull-${randomUUID()}.bundle`);
 		try {
@@ -486,7 +391,6 @@ export class Checkout {
 		}
 	}
 
-	/** Write bundle bytes into the checkout, naming a lost device instead of an ordinary refusal. */
 	async #writeBundle(env: ExecutionEnv, path: string, bytes: Uint8Array, context: Context): Promise<void> {
 		const written = await env.writeFile(path, bytes, context);
 		if (written.ok) return;
@@ -494,7 +398,6 @@ export class Checkout {
 		throw new Error(`checkout: cannot write ${path}: ${written.error.message}`);
 	}
 
-	/** Read bundle bytes out of the checkout. */
 	async #readBundle(env: ExecutionEnv, path: string, context: Context): Promise<Uint8Array> {
 		const read = await env.readBinaryFile(path, context);
 		if (read.ok) return read.value;
@@ -502,12 +405,6 @@ export class Checkout {
 		throw new Error(`checkout: cannot read ${path}: ${read.error.message}`);
 	}
 
-	/**
-	 * A local branch with commits the current branch does not contain.
-	 *
-	 * A model that commits on a branch it made and then switches back has left its memory on a ref `accept` would not
-	 * carry; "up-to-date" would report success for work the host never saw. A branch already merged is its ancestor.
-	 */
 	async #strayGuestBranch(env: ExecutionEnv, context: Context): Promise<string | undefined> {
 		const refs = await this.#git(env, ["for-each-ref", "--format=%(refname)", "refs/heads"], context);
 		if (refs.code !== 0) return undefined;
@@ -525,12 +422,6 @@ export class Checkout {
 		return undefined;
 	}
 
-	/**
-	 * Commit whatever the checkout has left uncommitted, as the turn's work.
-	 *
-	 * Unmerged paths are left alone: a conflict is the model's to resolve, not something to commit with its markers.
-	 * `--no-verify` because a hook in the checkout is agent-editable and cannot be a guard; the host validates the diff.
-	 */
 	async #commitGuestEdits(env: ExecutionEnv, context: Context): Promise<void> {
 		const dirty = await this.#git(env, ["status", "--porcelain"], context);
 		if (dirty.code !== 0 || dirty.stdout.trim() === "") return;
@@ -545,7 +436,6 @@ export class Checkout {
 		this.#onLog("[checkout] committed the turn's uncommitted work");
 	}
 
-	/** The identity a guest commit uses: the device has no global git config, and a commit without one fails. */
 	async #identity(env: ExecutionEnv, context: Context): Promise<void> {
 		await this.#must(env, ["config", "user.name", "mason"], context);
 		await this.#must(env, ["config", "user.email", "mason@localhost"], context);
@@ -553,12 +443,10 @@ export class Checkout {
 	}
 }
 
-/** What a rejected accept says to the model, once per turn. */
 export const MEMORY_REMINDER =
 	"The host did not accept your memory: the files below break a rule the prompt already told you about. Fix each " +
 	"one in ~/agent, commit the fix with git, and answer again.";
 
-/** What a conflicted pull says to the model. */
 export const CONFLICT_REMINDER =
 	"The host changed while you were working, and merging its commits into ~/agent left conflicts. Resolve the " +
 	"conflicts, commit, and answer again; the host accepts a fast-forward only.";
@@ -568,28 +456,11 @@ const REFUSED = "checkout.refused";
 
 export interface CheckoutExtensionOptions {
 	readonly checkout: Checkout;
-	/** The turn's environment, resolved from the conversation the hook runs in. */
 	readonly envFor: (conversationId: string) => Promise<ExecutionEnv>;
 }
 
-/**
- * The turn's two sync points: pull before the first request, accept when the turn answers.
- *
- * Both are `GenerationTask` hooks because that is where a turn's boundaries are: `beforeRequest` runs once per run for
- * the pull, memoized so a tool round pays one bundle rather than one per request; `onYield` runs on the final answer,
- * and a refusal continues the run with the reminder `delivery.ts` uses, so the model fixes the file in the turn that
- * broke it. `afterRun` accepts too, which is what lands the commits of a turn that ended in a tool `terminate`.
- */
 export function createCheckoutExtension(options: CheckoutExtensionOptions): Extension {
 	const checkout = options.checkout;
-	/**
-	 * A tool call that found the device gone settles named, in the place the model reads.
-	 *
-	 * pi-env reports a lost connection as an ordinary `unknown` error, so a lost device used to read in a transcript
-	 * like a tool that refused a request — while a resident read threw and was memoized. The rewrite is one named
-	 * result the model sees immediately: one settlement, the same sentence in the transcript as in the prompt's failure,
-	 * and no second attempt hidden behind it.
-	 */
 	const lossHook = hook(ToolTask, {
 		afterTool: (call, result) => {
 			const lost = (result.diagnostics ?? []).find((diagnostic) => isDeviceLost(diagnostic.message));
@@ -638,8 +509,6 @@ export function createCheckoutExtension(options: CheckoutExtensionOptions): Exte
 				};
 			}
 			if (pulled.status !== "conflicted") return undefined;
-			// The request only: the conflict is in the checkout, and the model is told where to look. A durable entry
-			// would re-say it on every later turn, after the conflict is long resolved.
 			return {
 				messages: [
 					...request.messages,

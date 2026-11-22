@@ -1,17 +1,3 @@
-/**
- * Prove the tool machine over SSH: mason's own execution path, unchanged, against a device `PI_ENV_SSH_*` names.
- *
- * `sshTargetFromEnv()` reads the target, `createRuntimeEnvManager()` builds the one `Connection`, and the
- * `RemoteExecutionEnv` the tools use runs `echo hi; id -u`. Nothing here re-implements ssh; what this adds is the
- * device, the assertion and the evidence: an exit code, a uid, and the version of the daemon the command reached.
- * A second call proves the daemon is reused, by comparing the command's parent with the pid `hello` reported.
- *
- * `--help` names every parameter. With `PI_ENV_SSH_HOST` unset it exits 0 with one line naming the missing variable: a
- * proof that fails wherever the thing it proves cannot exist is a proof the first person without a device turns off.
- *
- * Pinned by `packages/mason-agent/test/env-ssh.integration.test.ts`, which makes these assertions as a test and skips
- * with the same reason.
- */
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { SshTarget } from "@earendil-works/pi-env";
 import {
@@ -20,10 +6,8 @@ import {
 	sshTargetFromEnv,
 } from "../packages/mason-agent/src/server/env.ts";
 
-/** One name for the conversation, so both calls resolve the same environment. */
 const CONVERSATION = "prove-ssh-env";
 
-/** The uid the guest account has, which is the one a file written over the share arrives as. */
 const GUEST_UID = "1000";
 
 const PARAMETERS = `parameters, read from the environment:
@@ -42,13 +26,11 @@ function usage(stream: NodeJS.WriteStream, code: number): never {
 	process.exit(code);
 }
 
-/** The environment's answer when there is nothing to reach: one line, what was missing, exit 0. */
 function skip(why: string): number {
 	console.log(`prove:ssh-env: skip — ${why} (npm run prove:ssh-env -- --help)`);
 	return 0;
 }
 
-/** One line of an error: ssh reports a host that is down over several. */
 function reason(error: unknown): string {
 	return (error instanceof Error ? error.message : String(error)).replace(/\s+/g, " ").slice(0, 200);
 }
@@ -64,7 +46,6 @@ async function main(): Promise<number> {
 	if (host === undefined || host === "") return skip("PI_ENV_SSH_HOST is not set, so there is no device to reach");
 	let ssh: SshTarget;
 	try {
-		// `sshTargetFromEnv()` refuses a host with no pinned key: that is a half-configured environment, not a skip.
 		ssh = sshTargetFromEnv() as SshTarget;
 	} catch (error: unknown) {
 		console.error(`prove:ssh-env: ${reason(error)} (--help)`);
@@ -90,7 +71,6 @@ async function main(): Promise<number> {
 	};
 
 	try {
-		// The manager's own connection, so the version printed is the one the environment below uses.
 		const target = await manager.ensure(CONVERSATION, workspace);
 		let info: Awaited<ReturnType<typeof target.connection.info>>;
 		try {
@@ -120,7 +100,6 @@ async function main(): Promise<number> {
 			return { stdout, exitCode: result.ok ? result.value.exitCode : -1, ms: Date.now() - started };
 		};
 
-		// The shape a bash tool call has: streamed output, then an exit code, on the guest's own account.
 		const one = await run("echo hi; id -u");
 		const lines = one.stdout.split("\n");
 		check(one.exitCode === 0, "`echo hi; id -u` exits 0", `exit=${one.exitCode} in ${one.ms} ms`);
@@ -130,8 +109,6 @@ async function main(): Promise<number> {
 			`stdout=${JSON.stringify(one.stdout)}`,
 		);
 
-		// A second call on the same environment: same daemon, no second dial. `$PPID` inside the shell is the process
-		// that ran it, and `hello` already reported that pid, so the two numbers being equal is the reuse.
 		const two = await run('printf "%s\\n" "$PPID"; pwd; hostname; cat /proc/$PPID/comm');
 		const seen = two.stdout.trimEnd().split("\n");
 		const [parent = "", printed = "", machine = "", comm = ""] = seen;

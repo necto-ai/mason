@@ -8,14 +8,6 @@ import { openSqliteStore } from "../src/store-sqlite.ts";
 import { createFakeMason, type FakeMason } from "../src/testkit/fake-mason.ts";
 import { chat } from "./fixtures/chat.ts";
 
-/**
- * The claim the README makes about a restart: two connector instances, one store file, and in between them nothing but
- * what reached the disk.
- *
- * The store is the only thing carried over. Everything a connector keeps in memory — its link, its in-flight map, the
- * conversation it applied — is gone, which is exactly why the journal has to live in the store. The two instances share
- * this process because that is what a test can do; the state they share is only the file.
- */
 async function withFixture(
 	act: (context: {
 		readonly mason: FakeMason;
@@ -36,8 +28,6 @@ async function withFixture(
 
 	const open = async () => {
 		const store = await openSqliteStore({ path });
-		// The revisions this process applied: what a restart has to re-establish, and the one thing the SDK's own state
-		// member adds to the journal.
 		const frames: number[] = [];
 		const connector = createConnector({
 			name: chat.name,

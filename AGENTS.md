@@ -20,7 +20,8 @@ Do not read every document by default. Follow the links relevant to the task.
 - Preserve the runtime, connector, and integration boundaries. Every network entry point must have an explicit authentication rule.
 - Never expose credentials or personal data in logs, fixtures, examples, or commits.
 - Add or update tests when behavior changes. Keep generated documentation generated.
-- A docblock that promises behaviour or a security property names the test that pins it, and a value a script can generate
-  (a route row, a response body) is generated rather than described.
+- Code has no comments. `npm run check:comments` fails on one: the decision belongs in an ADR, in `docs/ARCHITECTURE.md`,
+  or in the message of the check that fails, and a value a script can generate (a route row, a response body) is
+  generated rather than described.
 - Follow the issue's scope and acceptance criteria. Raise a conflict with an ADR or current behavior instead of silently changing the contract.
 - Run the relevant checks from [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a change.

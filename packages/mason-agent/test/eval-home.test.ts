@@ -1,12 +1,3 @@
-/**
- * The eval seeder and the prompt have to agree about where a home keeps its files.
- *
- * Every scenario states the persona it runs under (`soul.md` in its `home`). A seeder that planted those files under
- * `agent/` — where `profile.md` and `skills/` do belong — put the soul where nothing reads it, so all six scenarios ran
- * on the shipped `DEFAULT_SOUL` and the results still looked plausible, because the scenario text overlaps it. This
- * pins the seeded paths to the ones `housePaths` resolves for the fields the prompt reads, and reads the opening
- * section of the prompt to prove the seeded soul is what the model is actually told.
- */
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -38,8 +29,6 @@ test("the eval seeder plants a scenario's files where the prompt reads them", as
 		});
 		const paths = housePaths(home);
 
-		// The three files the prompt reads, at the paths `housePaths` gives them: the soul is the server's, the profile
-		// and the skills index are the agent's.
 		assert.equal(await readFile(paths.soul, "utf8"), "You are SOUL-MARKER, the scenario's persona.\n");
 		assert.equal(await readFile(paths.profile, "utf8"), "PROFILE-MARKER, who the scenario works for.\n");
 		assert.equal(
@@ -48,7 +37,6 @@ test("the eval seeder plants a scenario's files where the prompt reads them", as
 		);
 		assert.ok(!existsSync(join(paths.agentDir, "soul.md")), "the soul is not a file the tool machine can read");
 
-		// And the prompt opens with the scenario's soul rather than with the one a fresh home is given.
 		await ensureHouse(paths, DEFAULT_SOUL);
 		const preamble = PROMPT_SECTIONS.find((section) => section.key === "preamble");
 		assert.ok(preamble, "the prompt opens with the soul");
@@ -63,7 +51,6 @@ test("the eval seeder plants a scenario's files where the prompt reads them", as
 	}
 });
 
-/** A section's text as it reaches the system prompt. The opening section reads no environment, so none is faked here. */
 async function rendered(promptSection: PromptSection): Promise<string | undefined> {
 	const text = await promptSection.render({} as never, BACKGROUND_CONTEXT as never);
 	if (text === undefined) return undefined;

@@ -1,16 +1,4 @@
 #!/usr/bin/env node
-/**
- * `biome` through its own shim, with one adjustment: on a NixOS machine the npm package's binary cannot start.
- *
- * The CLI package installs a prebuilt binary linked against the host's glibc (`Could not start dynamically linked
- * executable: …/cli-linux-x64/biome`, and NixOS has no `/lib64/ld-linux-x86-64.so.2` to give it). Biome also publishes a
- * statically linked musl build of the same version, and that one runs on NixOS, on Ubuntu in CI and everywhere else
- * without a loader. It is pinned in `optionalDependencies`, so a machine that cannot use it simply does not install it
- * and this script leaves biome's normal resolution alone.
- *
- * Both packages come from the same version in `package.json`, which is the point: the config and the formatter are the
- * same on a developer's machine and in CI, so "green here, red there" cannot come from a tool version.
- */
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";

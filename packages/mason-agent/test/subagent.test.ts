@@ -1,14 +1,3 @@
-/**
- * One foreground child per delegation: what it is, what it may touch, and how it ends.
- *
- * A child is a conversation owned by the tool call's task, configured in the creating commit: the `subagent` role's model
- * and thinking level, a turn limit, a worker brief instead of the persona, and an explicit extension selection that
- * leaves out `delivery` — so the child cannot reach the person and its words arrive only as the tool result. These tests
- * script the faux provider through the whole shape: parent asks, child answers, parent writes its message.
- *
- * The catalogue is the faux provider's, so the level has to be one it supports (`high` with `reasoning: true`); `max` is
- * unverifiable there and is proved against the real cached catalogue in `roles.test.ts`.
- */
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -43,7 +32,6 @@ after(async () => {
 	for (const directory of directories) await rm(directory, { recursive: true, force: true });
 });
 
-/** The main model, and a second one for the child: different ids, so a record that inherited would read wrong. */
 const CHILD_MODEL = "faux-child";
 
 const ROLES: RoleMap = {
@@ -58,7 +46,6 @@ interface Fixture {
 	readonly faux: FauxProviderHandle;
 }
 
-/** One home's worth of faux provider, models and roles. A test drives it with `faux.setResponses`. */
 async function fixture(prefix: string, tokensPerSecond?: number): Promise<Fixture> {
 	const directory = await mkdtemp(join(tmpdir(), prefix));
 	directories.add(directory);
@@ -88,9 +75,7 @@ function open(setup: Fixture, storage: "sqlite" | "memory" = "memory"): Promise<
 	});
 }
 
-/** A boot over one directory with its own scripted provider, for a test that restarts a runtime over the same storage. */
 async function boot(directory: string, _script: readonly string[]): Promise<Fixture & { runtime: AgentRuntime }> {
-	// Paced, so the child's answer is still on the wire when the process is closed.
 	const faux = fauxProvider({ models: [{ id: "faux-1" }, { id: CHILD_MODEL, reasoning: true }], ...slowProvider() });
 	const models = createModels();
 	models.setProvider(faux.provider as Provider);
@@ -104,14 +89,12 @@ async function boot(directory: string, _script: readonly string[]): Promise<Fixt
 	return { ...setup, runtime };
 }
 
-/** The newest delegate result: a transcript of several turns has one per call, and the newest is this turn's. */
 async function lastResult(
 	runtime: AgentRuntime,
 ): Promise<{ name: string; text: string; isError: boolean } | undefined> {
 	return (await toolResults(runtime)).filter((entry) => entry.name === SUBAGENT_TOOL).at(-1);
 }
 
-/** A parent turn: the delegate call, then whatever the test scripts after it. */
 function delegateCall(arguments_: JsonObject, id = "call-1"): FauxResponseStep {
 	return fauxAssistantMessage([fauxToolCall(SUBAGENT_TOOL, arguments_, { id })], { stopReason: "toolUse" });
 }
@@ -120,12 +103,10 @@ function said(text: string): FauxResponseStep {
 	return fauxAssistantMessage(fauxText(text));
 }
 
-/** A parent turn that answers with a message: the text is what the reader gets. */
 function delivered(text: string): FauxResponseStep {
 	return fauxAssistantMessage(fauxText(text));
 }
 
-/** The child's record: the model, the level, the turn limit and the selection, read from `pi.agent` in one commit. */
 async function childRecord(
 	runtime: AgentRuntime,
 	child: ConversationId,
@@ -145,8 +126,6 @@ async function childRecord(
 			model: agent.model === undefined ? null : { provider: agent.model.provider, modelId: agent.model.modelId },
 			thinking: agent.thinkingLevel ?? "off",
 			maxTurns: agent.maxTurns ?? null,
-			// Copied out: an `AgentDoc` field is a live overlay inside the commit, and a comparison after it has settled
-			// is a comparison with a tracker that is gone.
 			extensions: Array.isArray(agent.extensions) ? [...agent.extensions] : (agent.extensions ?? null),
 			instructions: agent.instructions ?? null,
 			cwd: agent.cwd ?? null,
@@ -154,7 +133,6 @@ async function childRecord(
 	}, BACKGROUND_CONTEXT);
 }
 
-/** Every conversation this session owns, with its owner edge: the durable answer to "how many children are there". */
 async function owned(runtime: AgentRuntime): Promise<readonly ConversationRecord[]> {
 	return runtime.harness.commit(async (tx) => {
 		const page = await tx.scanConversations({}, 50);
@@ -162,7 +140,6 @@ async function owned(runtime: AgentRuntime): Promise<readonly ConversationRecord
 	}, BACKGROUND_CONTEXT);
 }
 
-/** The tool-results the parent's turn carries, as text: what the model was told, in call order. */
 async function toolResults(runtime: AgentRuntime): Promise<{ name: string; text: string; isError: boolean }[]> {
 	const root = await runtime.conversation();
 	const page = await root.entries({ order: "ascending" }, 100, undefined, BACKGROUND_CONTEXT);
@@ -218,7 +195,6 @@ test("one child, owned by the tool task, on the subagent role, with no delivery 
 		);
 		assert.equal(results[0]?.isError, false);
 
-		// One child, owned by the tool's own task: the edge is what makes abort and idle waits include it.
 		const conversations = await owned(runtime);
 		const children = conversations.filter((record) => record.owner !== undefined);
 		assert.equal(children.length, 1, "one child conversation");
@@ -237,8 +213,6 @@ test("one child, owned by the tool task, on the subagent role, with no delivery 
 		assert.match(record.instructions ?? "", /^You are a worker/, "a worker brief instead of the persona");
 		assert.equal(record.cwd, null, "a reader works where the agent works");
 
-		// The selection is the whole of what it can reach: no delivery extension, so neither gate, and no tool that would
-		// reach the person. Its words reach them only as the tool result.
 		const conversation = await runtime.harness.conversation(child, BACKGROUND_CONTEXT);
 		const agent = await conversation?.agent(BACKGROUND_CONTEXT);
 		const names = (agent?.tools ?? []).map((tool) => tool.name);
@@ -286,7 +260,6 @@ test("the child's transcript is its task and its answer, and the parent's contex
 			"the task text is the child's whole briefing: no connector entry, no parent turn, no persona",
 		);
 		assert.match(JSON.stringify(turns[1]?.content), /drain the trap/);
-		// The system message is the worker brief and nothing else: no `preamble`, no `tone`, no `delivery` rule.
 		const system = childContext.messages.find((message) => message.role === "system") as
 			| { sections?: Record<string, string>; toolsAdded?: { name: string }[] }
 			| undefined;
@@ -298,7 +271,6 @@ test("the child's transcript is its task and its answer, and the parent's contex
 			"the request declares `read` and no way to write or to speak",
 		);
 
-		// The parent's context carries the answer once, as the tool result, and none of the child's own turns.
 		const parentContext = await root.context(BACKGROUND_CONTEXT);
 		const serialized = JSON.stringify(parentContext.messages);
 		assert.equal(
@@ -355,13 +327,11 @@ test("a child that loops stops at its turn limit, and the parent is told turn_li
 	}
 });
 
-/** A clock the test can read: the parent's turn, submitted but not awaited, and the child left running. */
 async function untilChildRuns(runtime: AgentRuntime, ms = 5_000): Promise<ConversationId> {
 	const deadline = Date.now() + ms;
 	while (Date.now() < deadline) {
 		const children = (await owned(runtime)).filter((record) => record.owner !== undefined);
 		if (children[0] !== undefined) {
-			// Deep enough that the child's request is in flight: it was created by a call that then waited on it.
 			await new Promise((resolve) => setTimeout(resolve, 150));
 			return children[0].id;
 		}
@@ -370,7 +340,6 @@ async function untilChildRuns(runtime: AgentRuntime, ms = 5_000): Promise<Conver
 	throw new Error("no child conversation was created");
 }
 
-/** A provider paced so a parent's short turn is quick and a long child answer is not: 100 characters per 100 ms. */
 function slowProvider(): { tokensPerSecond: number; tokenSize: { min: number; max: number } } {
 	return { tokensPerSecond: 1_000, tokenSize: { min: 100, max: 100 } };
 }
@@ -391,7 +360,6 @@ test("a child that hangs past its wall clock settles once, and the parent is tol
 	try {
 		setup.faux.setResponses([
 			delegateCall({ task: "Recite the whole manual.", timeoutMs: 1_000 }),
-			// Long enough to outlast the wall clock at this pace: the tool's timer fires mid-stream.
 			said("x".repeat(6_000)),
 			delivered("The worker was stopped by the wall clock."),
 			said("done"),
@@ -443,7 +411,6 @@ test("aborting the parent settles the child once, and leaves no task behind", as
 		assert.equal(live?.run, undefined);
 		assert.equal((await runtime.harness.inspect(BACKGROUND_CONTEXT)).tasks.length, 0, "nothing outlived the abort");
 
-		// The parent is told, as a failure: a call that never answered is not a call that answered with nothing.
 		const result = (await toolResults(runtime)).find((entry) => entry.name === SUBAGENT_TOOL);
 		assert.ok(result !== undefined, "the aborted call left a result behind");
 		assert.equal(result.isError, true);
@@ -460,14 +427,11 @@ test("closing the runtime mid-child and resuming keeps one child and one submiss
 		first.faux.setResponses([delegateCall({ task: "Recite the manual." }), said("z".repeat(6_000))]);
 		const root = await first.runtime.conversation();
 		await root.submit({ type: "input", content: "Recite the manual for me." }, BACKGROUND_CONTEXT);
-		// Mid-child: the conversation exists and its request is in flight when the process goes away.
 		await untilChildRuns(first.runtime);
 	} finally {
 		await first.runtime.close();
 	}
 
-	// The second boot over the same storage: the child's request is retried, the tool call is re-executed, and the turn
-	// finishes. The script is the child's answer, then the parent's message and its ending.
 	const second = await boot(directory, ["the manual is three pages long"]);
 	const runtime = second.runtime;
 	try {
@@ -501,7 +465,6 @@ test("closing the runtime mid-child and resuming keeps one child and one submiss
 	}
 });
 
-/** A checkout with one file in it: what a writer changes and a reader reads. */
 async function checkout(directory: string): Promise<string> {
 	const path = join(directory, "checkout");
 	await mkdir(path, { recursive: true });
@@ -509,7 +472,6 @@ async function checkout(directory: string): Promise<string> {
 	return path;
 }
 
-/** The lease file a checkout has, if it has one: what "held" and "released" are read from. */
 async function leaseFiles(directory: string): Promise<string[]> {
 	return readdir(join(directory, "leases")).catch(() => []);
 }
@@ -564,8 +526,6 @@ test("the lease refuses a second writer and admits the review and the next write
 	const dir = join(setup.directory, "leases");
 	try {
 		const root = await runtime.conversation();
-		// Held by somebody else: exactly the case the refusal exists for. Two writers on one checkout would read each
-		// other's half-written files, so the second one is told to come back rather than queued behind an unknown wait.
 		const mine = await acquireWriteLease({ checkout: path, dir, writer: "the test" });
 		assert.equal(mine.held, true);
 
@@ -582,7 +542,6 @@ test("the lease refuses a second writer and admits the review and the next write
 		assert.match(result?.text ?? "", /write lease/);
 		assert.match(result?.text ?? "", /the test/, "and the refusal names who holds it");
 
-		// A reader is never blocked by a writer: the review pass reads the checkout the writer is working in.
 		setup.faux.setResponses([
 			delegateCall({ task: "Read README.md and report.", checkout: path }, "c2"),
 			said("The checkout is titled The checkout."),
@@ -597,7 +556,6 @@ test("the lease refuses a second writer and admits the review and the next write
 		assert.equal(result?.isError, false, `a read-only child never takes the lease: ${result?.text}`);
 		assert.equal((await leaseFiles(setup.directory)).length, 1, "the lease the test holds is the one still there");
 
-		// Released, the next writer is admitted: implement, settle, review, next writer.
 		if (mine.held) await mine.lease.release();
 		setup.faux.setResponses([
 			delegateCall({ task: "Write a second file.", write: true, checkout: path }, "c3"),

@@ -1,24 +1,10 @@
-/**
- * The command `bin/mason.ts` reaches once the Node floor is satisfied: every noun the installed package answers with.
- *
- * The subcommands are the npm scripts of a checkout, mapped thin: every one runs the very script file the npm script
- * runs, compiled to `dist/`, so an installed bot and a checkout bot take their orders from the same code. There are no
- * new nouns here: what the panel and the token class used to serve is `curl /api/health` on one side and the
- * connector's own vocabulary on the other.
- *
- * It is a separate module from the entry point because the entry point may not import the runtime: an import is
- * evaluated before the guard that refuses an old Node, and the import that would throw is three modules deeper. Nothing
- * here runs until `bin/node-floor.ts` has said the version is allowed.
- */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** The checkout root and the install share this file's relative neighbourhood, computed once from where it runs. */
 const here = dirname(fileURLToPath(import.meta.url));
 
-/** The subcommand → script map, written as .ts and closed: every unmapped noun is, deliberately, not a command. */
 const SCRIPTS: Readonly<Record<string, string>> = {
 	up: "../src/server/main.ts",
 	init: "../scripts/init.ts",
@@ -33,12 +19,6 @@ const SCRIPTS: Readonly<Record<string, string>> = {
 	eval: "../evals/run.ts",
 };
 
-/**
- * The script a subcommand runs, wherever this wrapper sits.
- *
- * A compiled install maps `.ts` to the `.js` beside it in `dist/`; a checkout has no `dist`, so the source runs with
- * the type-stripping flag, the same one the npm scripts carry. One wrapper, both answers.
- */
 function scriptLoader(target: string): { readonly path: string; readonly flags: readonly string[] } {
 	const candidate = join(here, target.replace(/\.ts$/, ".js"));
 	if (existsSync(candidate)) return { path: candidate, flags: [] };
@@ -72,15 +52,8 @@ async function main(): Promise<void> {
 	const script = command !== undefined ? SCRIPTS[command] : undefined;
 	if (script === undefined) usage();
 	const args = rest;
-	// The wrapper has nothing of its own to say: the child's exit is this command's exit, and a script's
-	// stdout/stderr are the operator's terminal exactly as `npm run …` delivers them.
 	const { path, flags } = scriptLoader(script);
 	const child = spawn(process.execPath, [...flags, path, ...args], { stdio: "inherit", env: process.env });
-	// The stop signals name this wrapper's pid — the one the operator runs — but the child is the one that
-	// must act, so the wrapper forwards them. A TTY's Ctrl-C delivers SIGINT to the whole foreground group
-	// already (as `npm run …` does today), so the forward can arrive as a second delivery and the server's
-	// handlers run either way. A signal listener would hold the process open after the child is gone, so the
-	// child's exit is this command's exit and the wrapper goes with it.
 	child.on("exit", (code) => {
 		process.exit(code ?? 1);
 	});

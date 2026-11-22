@@ -1,14 +1,3 @@
-/**
- * What a boot refuses before anything can run.
- *
- * Two enabled connectors that each carry a person's words are two surfaces claiming to be where the answer arrives.
- * That claim is where #199's and #200's lost answers lived: a grant's words came back addressed to the other's, and
- * nothing in the file said which one was the person's chat. One bot works for one person, so the boot refuses the home
- * rather than discovering it from a message that went somewhere nobody read.
- *
- * The refusal is the boot's and not the writer's: `mason chat` still writes what the operator asked for, and `status`
- * and `doctor` still report the file as it is — which is what lets an operator fix the home the refusal names.
- */
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -27,7 +16,6 @@ after(async () => {
 	for (const directory of directories) await rm(directory, { recursive: true, force: true });
 });
 
-/** A provider with nothing scripted: no turn is started here, so no generation is asked for. */
 function fauxAccess(): ResolvedModel {
 	const faux = fauxProvider();
 	const models = createModels();
@@ -35,7 +23,6 @@ function fauxAccess(): ResolvedModel {
 	return { models, ref: { provider: "faux", modelId: "faux-1" }, faux: true };
 }
 
-/** The same provider, scripted: the test that turns a lost device into a run needs one tool call and no answer. */
 function scriptedFaux(steps: ReturnType<typeof fauxAssistantMessage>[]): {
 	access: ResolvedModel;
 	faux: ReturnType<typeof fauxProvider>;
@@ -47,7 +34,6 @@ function scriptedFaux(steps: ReturnType<typeof fauxAssistantMessage>[]): {
 	return { access: { models, ref: { provider: "faux", modelId: "faux-1" }, faux: true }, faux };
 }
 
-/** A home whose `service/integrations.json` holds `declared`, laid out the way a boot expects to find it. */
 async function homeWith(declared: unknown): Promise<string> {
 	const directory = await mkdtemp(join(tmpdir(), "mason-runtime-boot-"));
 	directories.add(directory);
@@ -57,12 +43,10 @@ async function homeWith(declared: unknown): Promise<string> {
 	return paths.home;
 }
 
-/** One entry's grant: a person's words (the default), or only the kinds it may raise. */
 function grant(options: { readonly user?: boolean } = {}): Record<string, unknown> {
 	return options.user === false ? { events: { kinds: ["alarm.ringing"] } } : { user: { owner: "8811" } };
 }
 
-/** Open a home's runtime, answering with the failure instead of throwing: a boot that did not refuse must be closed. */
 async function boot(
 	home: string,
 	options: { readonly storage?: "sqlite" | "memory"; readonly dataDir?: string } = {},
@@ -153,8 +137,6 @@ test("a corrupt agent.sqlite refuses the boot with the path and the move that re
 	const dataDir = join(dirname(home), "data");
 	const database = join(dataDir, "agent.sqlite");
 	await mkdir(dataDir, { recursive: true, mode: 0o700 });
-	// A file with the right name and the wrong bytes: what a truncated copy, a half-restored backup or a stray redirect
-	// leaves behind. Opening it must say so rather than dying inside the first query with no path in the sentence.
 	await writeFile(database, "this is not a database\n", { mode: 0o600 });
 	const refused = await boot(home, { storage: "sqlite" });
 	assert.ok(refused instanceof Error, "the boot refused the database");
@@ -170,9 +152,6 @@ test("a device that does not answer settles once, named, and the run's failure s
 		}),
 		fauxAssistantMessage([{ type: "text", text: "Stopped." }]),
 	]);
-	// The device is gone: every file call answers the sentence a lost pi-env connection produces, with the `lost` field
-	// FileError keeps as its cause. Nothing here is a boot probe — the boot is not supposed to dial — so the loss is
-	// discovered by the turn, which is where a transcript can record it.
 	const lost = () => new RemoteError({ code: "unknown", message: "pi-env connection lost", lost: true });
 	const unreadable = async () => ({
 		ok: false as const,
@@ -214,7 +193,6 @@ test("a device that does not answer settles once, named, and the run's failure s
 		assert.ok(settled.status === "done" || settled.status === "unanswered");
 		const page = await conversation.entries({}, 50, undefined, BACKGROUND_CONTEXT);
 		const results = page.items.filter((entry) => entry.kind === "pi.tool-result");
-		// One settlement for the call, and its text is the condition: the model reads "device lost", not "unknown".
 		assert.equal(results.length, 1, "the lost device is one tool result, not a retried call");
 		const text = JSON.stringify(results[0]);
 		assert.match(text, /device lost:/);

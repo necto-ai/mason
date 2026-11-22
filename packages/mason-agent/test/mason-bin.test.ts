@@ -1,12 +1,3 @@
-/**
- * `bin/mason.ts` — the installed package's one command.
- *
- * Every command here is executed exactly as an operator types it, from the source the npm scripts run, and every root is
- * a temporary directory passed in `MASON_ROOT`: the real one is never read, let alone written. What is pinned is what
- * survives a review of the subcommand set — usage names the closed set and none of the retired nouns, a root with no bot
- * refuses with the command that creates one, and a root whose halves sit at the root is refused with its names and
- * nothing created.
- */
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -32,7 +23,6 @@ async function tempRoot(): Promise<string> {
 	return directory;
 }
 
-/** Run `mason …` the way a person does, against one temporary root. A non-zero exit is a result, not an error. */
 async function mason(
 	args: readonly string[],
 	directory: string,
@@ -85,8 +75,6 @@ test("a root with no bot refuses, and names the command that creates one", async
 	const doctor = await mason(["doctor"], directory);
 	assert.equal(doctor.code, 1);
 	assert.match(doctor.stderr, /has no bot yet/);
-	// The sentence is `root.ts`'s, and the command in it is the script `command-line.ts` spells rather than `mason new`:
-	// an operator in the image has no `mason` on `PATH`, and the sentence has to be true where it is read.
 	assert.match(
 		doctor.stderr,
 		/scripts\/new\.ts <name>/,
@@ -118,8 +106,6 @@ test("a root command refuses MASON_HOME, which names one home and not a root", a
 test("a mapped command runs the same script the npm script runs", async () => {
 	const directory = await tempRoot();
 	const result = await mason(["integration", "list"], directory);
-	// The integration script resolves a home, and a root with no bot refuses — the refusal is the script's own, not a new
-	// one's, which is what "mapped thin" means.
 	assert.equal(result.code, 1);
 	assert.match(result.stderr, /has no bot yet/);
 	assert.doesNotMatch(result.stderr, /\n\s+at /, "one sentence, not a stack trace");

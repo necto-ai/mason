@@ -1,10 +1,3 @@
-/**
- * The document budgets: every file has a ceiling, and the ceiling is the thing that notices a document growing.
- *
- * What is pinned here is the failure, not the table. A budget that only ever printed numbers would be a report nobody
- * reads; the audit has to name a file that is over and a manifest entry whose file is gone, and the committed manifest
- * has to pass its own check — otherwise the ratchet is introduced with a file already above its number.
- */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -19,7 +12,6 @@ after(async () => {
 	for (const directory of directories) await rm(directory, { recursive: true, force: true });
 });
 
-/** A directory holding the given files, as text. */
 async function workspace(files: Record<string, string>): Promise<string> {
 	const directory = await mkdtemp(join(tmpdir(), "mason-doc-budget-"));
 	directories.add(directory);
@@ -84,17 +76,13 @@ test("the committed manifest is valid, covers the documents, and every file is i
 		[],
 		"a document is over its ceiling: cut it, or justify the raise in the pull request",
 	);
-	// The tiers this repository keeps a fact in, and not one of them may fall out of the manifest by accident.
 	for (const file of ["AGENTS.md", "GLOSSARY.md", "docs/SPEC.md", "docs/ARCHITECTURE.md", "docs/AGENTS.md"]) {
 		assert.ok(manifest.ceilings[file] !== undefined, `${file} has no ceiling`);
 	}
-	// The generated catalog is not budgeted: it is as long as the code it describes.
 	assert.equal(manifest.ceilings["docs/SURFACE.md"], undefined);
 });
 
 test("a document in a governed tier with no ceiling fails, so a new file cannot pass by not being listed", async () => {
-	// The manifest is the list of ceilings, so an audit that reads only the manifest cannot see a file that is missing
-	// from it: `docs/NEW.md` would be unbudgeted forever. The walk is what closes that.
 	const base = await workspace({ "AGENTS.md": words(10), "docs/SPEC.md": words(10), "docs/NEW.md": words(5000) });
 	const report = audit({ generated: [], ceilings: { "AGENTS.md": 20, "docs/SPEC.md": 20 } }, base);
 	assert.deepEqual(report.unlisted, ["docs/NEW.md (no ceiling; add one at its current size)"]);
@@ -113,8 +101,6 @@ test("a generated document is exempt by name, and may not also carry a ceiling",
 });
 
 test("the three record directories are exempt, and every other subdirectory is not", async () => {
-	// The exemption is a list, not "the walk stops at the top of docs/": `docs/plans/HUGE.md` is a document and has to
-	// carry a ceiling, while a decision, a process page and a research run are records of their own.
 	const base = await workspace({
 		"docs/adr/0001-a.md": words(2000),
 		"docs/research/x/INDEX.md": words(2000),

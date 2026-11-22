@@ -1,16 +1,3 @@
-/**
- * The conversation as state on the wire: the snapshot a hold begins with, the diffs that follow it, the row in flight
- * under the id it commits with, and the revision that makes a reconnect safe.
- *
- * The socket is the point. What a client actually receives is Chord's `snap`/`ops` stream over a websocket the
- * credential opened, and every case here reads that stream: a number taken from the projection would be a number about
- * mason, not about the wire a client renders.
- *
- * `Client` below is the rule such a client follows, stated once where a test can disagree with it: hold the snapshot it
- * is handed, apply each diff to a copy of that state, and keep the result only when its `revision` is greater than the
- * one held. The revision travels inside the state — Chord's diff frame carries ops, not a sequence number — so the rule
- * is "apply, then judge", and a client that judged before applying would need a field the wire does not have.
- */
 import assert from "node:assert/strict";
 import { after, describe, it } from "node:test";
 import type { StateEvent } from "@earendil-works/chord";
@@ -26,10 +13,8 @@ import {
 	until,
 } from "./support/connector.ts";
 
-/** The answer the streaming case measures: long enough that a paced provider has several chunks to publish. */
 const ANSWER = "The deploy is healthy and the migration is done. ".repeat(8).trim();
 
-/** What this run measured, recorded before it asserts so a failing run still prints the numbers. */
 const measured: { updatesPerTurn?: number; meanIntervalMs?: number; chars?: number; firstUpdateMs?: number } = {};
 
 after(() => {
@@ -41,15 +26,8 @@ after(() => {
 	);
 });
 
-/**
- * The client's rule: a snapshot replaces what is held, a diff is applied to a copy of it, and the result is kept only
- * when it is a later revision. Every accepted state is kept, because a case here asks what the client saw when, which
- * is not the same question as what the last frame carried.
- */
 class Client {
-	/** The states it accepted, oldest first, with when each one arrived. */
 	readonly states: Array<{ at: number; state: ConversationState }> = [];
-	/** The revisions it refused because it already held one at least as new. */
 	readonly refused: number[] = [];
 	private held: ConversationState | undefined;
 
@@ -73,13 +51,11 @@ class Client {
 		return this.held;
 	}
 
-	/** The revisions it accepted, in order. */
 	get revisions(): number[] {
 		return this.states.map((entry) => entry.state.revision);
 	}
 }
 
-/** The delivered row in flight in one state, when there is one: the row a person watches being written. */
 function streamingRow(state: ConversationState | undefined): { id: string; text: string } | undefined {
 	for (let index = (state?.transcript.length ?? 0) - 1; index >= 0; index -= 1) {
 		const row = state?.transcript[index];
@@ -88,14 +64,12 @@ function streamingRow(state: ConversationState | undefined): { id: string; text:
 	return undefined;
 }
 
-/** The delivered rows that have committed. */
 function committed(state: ConversationState | undefined): Array<{ id: string; text: string }> {
 	return (state?.transcript ?? []).flatMap((row) =>
 		row.kind === "delivered" && row.streaming !== true ? [{ id: row.id, text: row.text }] : [],
 	);
 }
 
-/** Feed everything a hold has received into the client, and remember how far it read. */
 function pump(client: Client, frames: readonly StateEvent<ConversationState>[], cursor: { at: number }): void {
 	while (cursor.at < frames.length) {
 		client.read(frames[cursor.at] as StateEvent<ConversationState>);
@@ -103,7 +77,6 @@ function pump(client: Client, frames: readonly StateEvent<ConversationState>[], 
 	}
 }
 
-/** Every transition the client was told about, in the order it was told. */
 function told(client: Client): Array<Record<string, unknown>> {
 	return client.states.flatMap((entry) => entry.state.transitions as unknown as Array<Record<string, unknown>>);
 }
@@ -116,7 +89,6 @@ describe("the conversation a connector holds", () => {
 			try {
 				const client = new Client();
 				const cursor = { at: 0 };
-				// The client holds before the turn starts, the way a chat window is open before anybody types.
 				await until(() => peer.frames.length > 0, "the snapshot a hold begins with");
 				pump(client, peer.frames, cursor);
 				await peer.ref.append({
@@ -158,7 +130,6 @@ describe("the conversation a connector holds", () => {
 					"the client applied each revision once, in order",
 				);
 
-				// A message is one row under one id: the row a person watches being written is the row that commits.
 				const last = client.value as ConversationState;
 				const rows = committed(last);
 				assert.deepEqual(
@@ -177,7 +148,6 @@ describe("the conversation a connector holds", () => {
 				);
 				assert.equal(inFlight.at(-1)?.id, rows[0]?.id, "the row in flight carries the id the row commits under");
 
-				// The transitions name what happened, in the revision that reports it: the client reacts without diffing.
 				const news = told(client);
 				assert.deepEqual(
 					news
@@ -186,9 +156,6 @@ describe("the conversation a connector holds", () => {
 					rows.map((row) => row.id),
 					"each commit is reported once, naming the row it became",
 				);
-				// A run is a task id, and pi-durable hands a turn over mid-run: the task a turn starts under is not always
-				// the one it stops under, so a client is told the replaced run ended before the one replacing it starts.
-				// Counting kinds would hide a stop for a run nobody saw start, so the ids are what this walks.
 				const runs = news.filter((one) => one.kind === "run.started" || one.kind === "run.stopped");
 				const open: string[] = [];
 				for (const run of runs) {
@@ -250,21 +217,17 @@ describe("the conversation a connector holds", () => {
 			await first.close();
 
 			const second = await holdPeer(served);
-			// A new hold is a new frame list, so the client reads it from its own first frame: the cursor belongs to a hold.
 			const resumedCursor = { at: 0 };
 			try {
 				await until(() => second.frames.length > 0, "the snapshot of the new hold");
 				pump(client, second.frames, resumedCursor);
 				assert.equal(second.frames[0]?.type, "snap", "a re-hold begins with the state, before any diff");
 				const resumed = client.value as ConversationState;
-				// The comparison holds within one mason process: a restart begins the counter again at 0, and the snapshot is
-				// applied whatever revision it carries, which is what converges the client across one.
 				assert.ok(
 					resumed.revision >= held.revision,
 					"within one process, the state a reconnecting client is handed is at least as new as the one it held",
 				);
 
-				// Replaying a diff from before the reconnect is what a client must survive: it is not a later revision.
 				client.read(second.frames[0] as StateEvent<ConversationState>);
 				client.read(first.frames[stale] as StateEvent<ConversationState>);
 				assert.equal(
@@ -318,7 +281,6 @@ describe("the conversation a connector holds", () => {
 				const cursor = { at: 0 };
 				await until(() => peer.frames.length > 0, "the snapshot a hold begins with");
 				pump(client, peer.frames, cursor);
-				// The wait a person sits through: from the append mason claimed to the first words on screen.
 				const claimed = performance.now();
 				await peer.ref.append({
 					type: "submission",
@@ -380,8 +342,6 @@ describe("an event grant's conversation", () => {
 					"an event client is served no transcript",
 				);
 
-				// A turn on the grant that does read the conversation must not reach this client: nothing is published to a
-				// cell the door never feeds.
 				const user = await connectConnector(served);
 				try {
 					await user.connector.submit({

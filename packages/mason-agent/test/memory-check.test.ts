@@ -1,10 +1,3 @@
-/**
- * The three memory invariants, and the path a write has to name to meet them.
- *
- * These are the rules the host enforces on an incoming checkout (`checkout.ts`) and the write hook enforces before a
- * file lands. The tests are at that seam: what a file says, what the incoming diff reports, and what counts as a file
- * inside `agent/` at all.
- */
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";

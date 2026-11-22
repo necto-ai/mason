@@ -1,10 +1,3 @@
-/**
- * Admission: where a submission came from, and where it waits.
- *
- * The origin is read from the entry kind pi-durable already places, so the mapping is the whole policy — there is no
- * parallel field to keep in step. One rule falls out of it: a message arriving mid-turn is read by that turn, so a hook
- * steers like the user does, and a hook that asks to wait asks for itself.
- */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { entryFor, entryKindFor, whenBusyFor } from "../src/server/admission.ts";
@@ -21,7 +14,6 @@ describe("an input's origin", () => {
 		const data = { hookId: "workspace-check", payload: null };
 		const entry = entryFor("hook", data);
 		assert.deepEqual(entry, { kind: "app.hook", data: { hookId: "workspace-check", payload: null } });
-		// The caller keeps its object: the next fire must not rewrite the entry already in the transcript.
 		data.hookId = "morning-brief";
 		assert.deepEqual(entry?.data, { hookId: "workspace-check", payload: null });
 	});

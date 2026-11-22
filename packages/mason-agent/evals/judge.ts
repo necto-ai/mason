@@ -1,13 +1,3 @@
-/**
- * `npm run eval:judge -- .data/evals/<run>` — score stored traces on quality, not just on whether a check passed.
- *
- * Programmatic checks answer "did it". They cannot answer "was that message any good". This reads the traces a run left
- * behind and asks a cheaper, different model the four questions in `rubric.md`, one call per scenario. It runs on stored
- * results, so a run can be judged later, by hand, without paying for it twice.
- *
- * The judge defaults to the local model: it costs nothing, and a judge that agrees with the runner because it is the
- * runner is not a judge.
- */
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
@@ -48,7 +38,6 @@ const resolved = runtime.getModel(judgeModel.slice(0, slash), judgeModel.slice(s
 if (resolved === undefined) throw new Error(`unknown judge model: ${judgeModel}`);
 const model = resolved;
 
-// Verdicts are written next to the traces, so a second pass must not read its own output back as a trace.
 const files = (await readdir(directory)).filter(
 	(file) => file.endsWith(".json") && file !== "summary.json" && !file.endsWith(".judge.json"),
 );

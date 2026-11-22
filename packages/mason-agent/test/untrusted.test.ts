@@ -1,10 +1,3 @@
-/**
- * Untrusted text: fenced, labelled, capped, and unable to forge its own boundary.
- *
- * The payload reaches the prompt through `formatPrompt`, so these are the assertions that matter: the markers are
- * there, the sender's words survive intact, a sender cannot close the fence early, and a huge body cannot grow the
- * prompt. The prompt-side rule is asserted in `prompt.test.ts` with the rest of the sections.
- */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { formatPrompt } from "../src/server/hooks.ts";

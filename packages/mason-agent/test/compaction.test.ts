@@ -1,8 +1,3 @@
-/**
- * Where auto-compaction starts. The goalpost is a token count, not the window's edge, so what the harness is given is
- * the room left over: a 1M-token model summarizes at 300k, and a model too small to hold the goalpost compacts where
- * it always did.
- */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Models } from "@earendil-works/pi-ai";
@@ -11,7 +6,6 @@ import { fauxProvider } from "@earendil-works/pi-ai/providers/faux";
 import type { AgentModelRef } from "../src/server/runtime.ts";
 import { COMPACTION_GOALPOST_TOKENS, compactionReserve } from "../src/server/runtime.ts";
 
-/** A one-model catalog, sized by the faux provider, and the ref that names it. */
 function catalog(definition?: { id: string; contextWindow?: number }): { models: Models; ref: AgentModelRef } {
 	const faux = fauxProvider(definition === undefined ? undefined : { models: [definition] });
 	const models = createModels();
@@ -26,7 +20,6 @@ describe("the compaction goalpost", () => {
 	});
 
 	it("leaves a small model at the window's edge instead of inverting the threshold", () => {
-		// A 128k local model: `window - goalpost` is negative, and a negative reserve would compact on every turn.
 		for (const contextWindow of [131_072, 262_144, 0]) {
 			const { models, ref } = catalog({ id: "local", contextWindow });
 			const reserve = compactionReserve(models, ref);

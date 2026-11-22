@@ -46,8 +46,6 @@ for (const [kind, make] of implementations) {
 			await store.delete(NAMESPACE.outbox, "a");
 			assert.equal(await store.read(NAMESPACE.outbox, "a"), undefined);
 
-			// `prune` is the store's own answer to a namespace that only grows, and a connector keeps its own under a name of
-			// its choosing: the SDK's two namespaces are its journal and its settled answers, and neither is pruned by the SDK.
 			await store.write("vendor.sent", "x", { status: "delivered" });
 			await store.write("vendor.sent", "y", { status: "delivered" });
 			await store.prune("vendor.sent", 1);

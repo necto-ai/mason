@@ -50,7 +50,6 @@ test("there is one contract, placed where the protocol says", () => {
 });
 
 test("the shape the type says and the shape the schema validates are one shape", () => {
-	// A session the schema accepts is a session the connector's interface describes: the state is the handshake.
 	const session = {
 		protocol: 1,
 		commands: ["stop"],
@@ -67,8 +66,6 @@ test("the shape the type says and the shape the schema validates are one shape",
 	assert.equal(compile(SessionSchema).check(session), true);
 	assert.equal(compile(SessionSchema).check({ ...session, protocol: "one" }), false);
 
-	// The same manifest an MCP initialize result carries and a connector hands over in its session: one schema, one
-	// parser, one set of refusals.
 	const manifest = {
 		about: "Issues and pull requests",
 		events: [{ kind: "issue.opened", description: "an issue opened", prompt: "Read the issue." }],
@@ -106,7 +103,6 @@ test("the shape the type says and the shape the schema validates are one shape",
 	);
 	assert.equal(compile(ControlResultSchema).check({ handled: true, op: "stop" }), true);
 
-	// The conversation is the read model, and the type a client reads it with is the schema the wire validates.
 	const conversation = {
 		revision: 3,
 		transcript: [
@@ -130,15 +126,7 @@ test("the shape the type says and the shape the schema validates are one shape",
 	);
 });
 
-/**
- * What the conversation member declares, read from the description a link actually carries.
- *
- * The Appiary client reads exactly these fields and no others; a field added here without the client reading it is a
- * field the wire pays for and nobody uses, and a field the client reads that is not here is a frame it cannot get.
- */
 test("a message row may carry runId, and a consumer that never names it still validates", () => {
-	// The field is additive inside major 1. The row a client built before it existed is still a row: the schema validates
-	// both spellings, and an open object ignores a field it was not told about.
 	const state = (row: Record<string, unknown>) => ({
 		revision: 1,
 		transcript: [row],
@@ -229,7 +217,6 @@ test("the conversation member carries the read model and nothing else", () => {
 		rows.map((row) => row.properties?.kind.const),
 		["user", "delivered", "event", "notice"],
 	);
-	// A streamed message has to be the row it settles into: same id, plus the two marks a client renders.
 	const delivered = rows[1];
 	assert.deepEqual(delivered?.required, ["kind", "id", "text"]);
 	assert.deepEqual(Object.keys(delivered?.properties ?? {}), [

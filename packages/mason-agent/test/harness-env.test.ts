@@ -1,7 +1,3 @@
-/**
- * Milestone 1: the durable harness runs its tools through the `pi-env` daemon, event hooks make the
- * agent speak first, and a run interrupted by a restart picks up where it stopped.
- */
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -34,7 +30,6 @@ async function tempDir(prefix: string): Promise<string> {
 	return directory;
 }
 
-/** A faux provider whose scripted responses the test controls. */
 function fauxAccess(): { access: ResolvedModel; faux: ReturnType<typeof fauxProvider> } {
 	const faux = fauxProvider();
 	const models = createModels();
@@ -51,8 +46,6 @@ function openFor(
 	access: ResolvedModel,
 	options: { storage?: "sqlite" | "memory"; extensions?: OpenAgentRuntimeOptions["extensions"] } = {},
 ): Promise<AgentRuntime> {
-	// One routine the tests fire; a deployment ships none, so the file is what the test seeds. The schedule is far
-	// past every test's lifetime, so only a test's own fire becomes a turn.
 	mkdirSync(join(directory, "house", "agent"), { recursive: true, mode: 0o700 });
 	writeFileSync(
 		join(directory, "house", "agent", "events.json"),
@@ -77,7 +70,6 @@ function openFor(
 	});
 }
 
-/** The transcript as the client receives it: the projection, not the entries behind it. */
 async function readTranscript(runtime: AgentRuntime) {
 	return projectTranscript(await runtime.viewSnapshot(BACKGROUND_CONTEXT));
 }
@@ -95,7 +87,6 @@ function textOf(message: unknown): string {
 	return "";
 }
 
-/** A `pi.system` entry carries the rendered prompt sections, not message content. */
 function sectionsOf(message: unknown): Record<string, string | null> {
 	return (message as { sections?: Record<string, string | null> } | undefined)?.sections ?? {};
 }
@@ -103,7 +94,6 @@ function sectionsOf(message: unknown): Record<string, string | null> {
 describe("durable harness + pi-env", () => {
 	it("runs write, edit, read, and bash through the pi-env daemon", async () => {
 		const directory = await tempDir("pda-env-");
-		// The soul is a file in the agent's home, not in the workspace.
 		await mkdir(join(directory, "house", "service"), { recursive: true });
 		await writeFile(join(directory, "house", "service", "soul.md"), "You are SOUL-MARKER, a test agent.\n");
 		const { access, faux } = fauxAccess();
@@ -112,14 +102,11 @@ describe("durable harness + pi-env", () => {
 			toolCall("edit", { path: "note.txt", edits: [{ oldText: "world", newText: "durable" }] }, "e"),
 			toolCall("read", { path: "note.txt" }, "r"),
 			toolCall("bash", { command: "wc -c < note.txt" }, "b"),
-			// The answer's text is the message: there is no delivery call to make.
 			fauxAssistantMessage(fauxText("The note greets durable.")),
 		]);
 
 		const runtime = await openFor(directory, access);
 		try {
-			// The home the runtime opened is the one the prompt and the memory tools resolve through `currentHouse()`: a
-			// `remember` write must land here, not in the developer's real home.
 			assert.equal(currentHouse().home, join(directory, "house"));
 
 			const settled = await (
@@ -127,22 +114,17 @@ describe("durable harness + pi-env", () => {
 			).wait(BACKGROUND_CONTEXT);
 			assert.equal(settled.status, "done");
 
-			// The file exists on the host only because the daemon executed the calls.
 			assert.equal(await readFile(join(directory, "note.txt"), "utf8"), "hello durable\n");
 
 			const entries = await readEntries(runtime);
 			const toolResults = entries.filter(ToolResultEntry.is);
-			// The four daemon calls, and no delivery call: the answer is the text the generation wrote.
 			assert.deepEqual(
 				toolResults.map((entry) => (entry.model?.[0] as { toolName?: string }).toolName),
 				["write", "edit", "read", "bash"],
 			);
-			// The `read` result carries what the daemon returned, not what the model asked for.
 			assert.match(textOf(toolResults[2]?.model?.[0]), /hello durable/);
-			// The four rounds, and the answer that ends the turn.
 			assert.equal(entries.filter((entry) => entry.kind === "pi.assistant").length, 5);
 
-			// The home's `service/soul.md` and the working directory reach the system prompt.
 			const system = entries
 				.filter((entry) => entry.kind === "pi.system")
 				.flatMap((entry) => Object.values(sectionsOf(entry.model?.[0])))
@@ -158,15 +140,12 @@ describe("durable harness + pi-env", () => {
 		const directory = await tempDir("pda-split-home-");
 		const { access, faux } = fauxAccess();
 		faux.setResponses([
-			// The write lands on the agent's half, through the daemon: the profile is written where the prompt reads it.
 			toolCall(
 				"write",
-				// A local run is its own device: `~` is the home, so the device path is the host path under the temporary home.
 				{ path: join(directory, "house", "agent", "profile.md"), content: "Denis prefers short answers.\n" },
 				"w",
 			),
 			fauxAssistantMessage(fauxText("Noted.")),
-			// A second turn, so the prompt is rendered again: the profile written above is now the agent's memory.
 			fauxAssistantMessage(fauxText("Second.")),
 		]);
 		const runtime = await openFor(directory, access);
@@ -197,8 +176,6 @@ describe("durable harness + pi-env", () => {
 				).status,
 				"done",
 			);
-			// The next turn's prompt is read through the same environment: what `write` put on the agent's half is what
-			// the model is told about the person it works for.
 			const system = (await readEntries(runtime))
 				.filter((entry) => entry.kind === "pi.system")
 				.flatMap((entry) => Object.values(sectionsOf(entry.model?.[0])))
@@ -225,8 +202,6 @@ describe("durable harness + pi-env", () => {
 			),
 			fauxAssistantMessage(fauxText("Probed the environment.")),
 		]);
-		// A secret in the server's own environment: an exported key, a database URL, a switch of ours. The model can run
-		// arbitrary commands, so anything reachable as `$NAME` is in the transcript and on its way to the provider.
 		process.env.MASON_ENV_LEAK_TEST = "leaked";
 		const runtime = await openFor(directory, access, { storage: "memory" });
 		try {
@@ -260,7 +235,6 @@ describe("durable harness + pi-env", () => {
 			assert.equal((await submission.wait(BACKGROUND_CONTEXT)).status, "done");
 
 			const entries = await readEntries(runtime);
-			// No tool named `send` exists: the generation's text is the message, and nothing had to be called for it.
 			const offered = entries
 				.filter((entry) => entry.kind === "pi.system")
 				.flatMap((entry) => (entry.model?.[0] as { tools?: Array<{ name: string }> }).tools ?? []);
@@ -270,14 +244,11 @@ describe("durable harness + pi-env", () => {
 				"no conversation is offered a delivery tool",
 			);
 
-			// What leaves the server for the client is the reader's transcript: the message, and nothing of the working
-			// notes beside it — no reasoning, no call.
 			const transcript = await readTranscript(runtime);
 			assert.deepEqual(
 				transcript.filter((item) => item.kind !== "user").map((item) => ({ ...item, runId: undefined })),
 				[{ kind: "delivered", id: "message:1", text: "Standup moved to nine.", runId: undefined }],
 			);
-			// The run a message belongs to is the input entry that started it, known even after a restart.
 			const user = entries.find((entry) => entry.kind === "pi.user");
 			assert.equal(
 				(transcript.find((item) => item.kind === "delivered") as { runId?: string }).runId,
@@ -285,7 +256,6 @@ describe("durable harness + pi-env", () => {
 				"the message names the run its submission started",
 			);
 
-			// The invariant the model reads is in the prompt: the text is the message, and there is no address to name.
 			const system = entries
 				.filter((entry) => entry.kind === "pi.system")
 				.flatMap((entry) => Object.values(sectionsOf(entry.model?.[0])))
@@ -301,13 +271,11 @@ describe("durable harness + pi-env", () => {
 	it("an event hook appends an app.hook entry and the agent answers on its own", async () => {
 		const directory = await tempDir("pda-hook-");
 		const { access, faux } = fauxAccess();
-		// The proactive turn writes its message like any other: the answer's text.
 		faux.setResponses([fauxAssistantMessage(fauxText("Workspace is clean."))]);
 		const runtime = await openFor(directory, access, { storage: "memory" });
 		try {
 			assert.deepEqual(
 				runtime.hooks.list().map((hook) => hook.id),
-				// The file's routine, then the supervisor's own hook: a deployment otherwise ships none.
 				["workspace-check", "retry-failed-run"],
 			);
 			const submission = await runtime.hooks.fire("workspace-check");
@@ -323,12 +291,10 @@ describe("durable harness + pi-env", () => {
 			assert.match(data.firedAt, /^\d{4}-\d{2}-\d{2}T/);
 			assert.match(textOf(hookEntry.model?.[0]), /^\[ROUTINE: workspace-check\]/);
 
-			// The hook input started a run, and the model's answer is the proactive message.
 			const answers = entries.filter((entry) => entry.kind === "pi.assistant");
 			assert.equal(answers.length, 1, "one generation, one message");
 			assert.match(textOf(answers[0]?.model?.[0]), /Workspace is clean\./);
 
-			// What leaves the server for a proactive turn is the message, and not the trigger that produced it.
 			const transcript = await readTranscript(runtime);
 			assert.deepEqual(
 				transcript.map((item) => item.kind),
@@ -350,13 +316,11 @@ describe("durable harness + pi-env", () => {
 	it("the retry hook carries the failure back to the agent, and nothing schedules it on its own", async () => {
 		const directory = await tempDir("pda-retry-");
 		const { access, faux } = fauxAccess();
-		// The retry's turn writes its message like any other: the answer's text.
 		faux.setResponses([fauxAssistantMessage(fauxText("Picking the write back up."))]);
 		const runtime = await openFor(directory, access, { storage: "memory" });
 		try {
 			const hook = runtime.hooks.get("retry-failed-run");
 			assert.ok(hook, "the retry hook ships built in");
-			// Manual only: an interval would fire it at a model that may still be down.
 			assert.equal(hook.enabled, false);
 			assert.equal((hook as { intervalMs?: number }).intervalMs, undefined);
 
@@ -369,7 +333,6 @@ describe("durable harness + pi-env", () => {
 			const data = hookEntry.data as { hookId: string; payload: string };
 			assert.equal(data.hookId, "retry-failed-run");
 			assert.equal(data.payload, "Connection error.");
-			// The prompt tells the agent to resume rather than restart, with the failure in it.
 			const prompt = textOf(hookEntry.model?.[0]);
 			assert.match(prompt, /^\[ROUTINE: Retry a failed run\]/);
 			assert.match(prompt, /resume it from where it stopped/i);
@@ -383,7 +346,6 @@ describe("durable harness + pi-env", () => {
 		const directory = await tempDir("pda-recovery-");
 		const blocked = deferred();
 		let block = true;
-		// A section that parks the generation until the "crash", so the run is provably unfinished.
 		const Blocker = defineExtension({
 			name: "test-blocker",
 			sections: [
@@ -409,7 +371,6 @@ describe("durable harness + pi-env", () => {
 		await runtime.close();
 
 		const { access: restartedAccess, faux: restartedFaux } = fauxAccess();
-		// The resumed turn answers with text, which the projection turns into the message.
 		restartedFaux.setResponses([fauxAssistantMessage(fauxText("Finished after the restart."))]);
 		const reopened = await openFor(directory, restartedAccess);
 		try {
@@ -420,7 +381,6 @@ describe("durable harness + pi-env", () => {
 			assert.equal((await handle?.wait(BACKGROUND_CONTEXT))?.status, "done");
 
 			const entries = await readEntries(reopened);
-			// No delivery entry: the assistant answer is the message, and it is the last thing committed.
 			assert.deepEqual(
 				entries.map((entry) => entry.kind),
 				["pi.user", "pi.system", "pi.assistant"],

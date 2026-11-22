@@ -1,11 +1,3 @@
-/**
- * `scripts/init.ts` — the common store, flags only, and the one completion that comes before it.
- *
- * The flow is run in-process: `runInit` takes flags and an optional provider access, so the provider's answer is scripted
- * without a terminal or a network, and nothing else is asked. What is pinned is the promise the command makes: a
- * provider and model are stored only after one real completion, the write is one staged commit with the previous file
- * beside it, a second run with no flags asks nothing and writes nothing, and a run short of a flag names the flag.
- */
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -35,7 +27,6 @@ async function tempRoot(): Promise<string> {
 	return directory;
 }
 
-/** The offline provider, with one scripted answer and a counter the test can read. */
 function offline(): { access: ProviderAccess; answers: () => number } {
 	const faux = fauxProvider();
 	const models = createModels();
@@ -45,12 +36,9 @@ function offline(): { access: ProviderAccess; answers: () => number } {
 	return { access, answers: () => faux.state.callCount };
 }
 
-/** The flags a scripted first run passes: the offline provider needs no key. */
 const FIRST_RUN = ["--provider", "faux", "--model", "faux-1"];
 
 test("the verifying completion carries a session id, which OpenCode routes on", async () => {
-	// The header is `x-opencode-session`, and pi-ai's OpenCode provider fills it from `options.sessionId`. A check without
-	// one is a 400 before the key is looked at, which is exactly what `mason init --provider opencode-go` used to get.
 	const faux = fauxProvider();
 	const models = createModels();
 	models.setProvider(faux.provider);
@@ -112,7 +100,6 @@ describe("a first init", () => {
 		const faux = fauxProvider();
 		const models = createModels();
 		models.setProvider(faux.provider);
-		// No scripted responses: the completion fails before the first file is built.
 		faux.setResponses([]);
 		const code = await runInit(FIRST_RUN, { root, access: { models, faux: true } });
 		assert.equal(code, 1);
