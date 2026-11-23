@@ -44,8 +44,7 @@ export interface ModelRef {
 }
 
 export interface MasonOptions {
-	/** `memory` keeps the transcript in RAM, for a test or a throwaway run. */
-	readonly storage?: "sqlite" | "memory";
+	/** Overrides every harness setting this boot would otherwise choose. */
 	readonly settings?: HarnessSettings;
 }
 
@@ -89,8 +88,9 @@ export class Mason {
 		// alone; the execution device below then never starts a daemon.
 		registry.install(CodingTools);
 
+		// Where the transcript lives is a config fact, not an argument: one bot, one answer to it.
 		const storage: Storage =
-			options.storage === "memory"
+			config.storage === "memory"
 				? new MemoryStorage()
 				: await openNodeSqliteStorage(join(config.dataDir, "agent.sqlite"));
 
@@ -112,7 +112,7 @@ export class Mason {
 		}
 
 		try {
-			const instructions = await config.prompt();
+			const instructions = config.prompt();
 			const root = await harness.root(BACKGROUND_CONTEXT, {
 				agent: { model: ref, cwd: config.device.cwd, instructions },
 			});

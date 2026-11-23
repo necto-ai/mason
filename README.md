@@ -35,6 +35,34 @@ import { Config, Mason } from "mason-agent";
 
 `npm run demo` is that script: it opens `~/.mason/demo` with the offline provider, says hello and lists the transcript.
 
+## A config, in code
+
+`Config.create()` takes every fact itself and reads nothing, so no directory has to exist first. This is the whole of
+`src/demo.ts`:
+
+```ts
+const config = Config.create({
+	home: join(tmpdir(), "mason-demo"),
+	soul: "You are mason, a demo assistant.",
+	profile: "The person running the demo.",
+	provider: "faux",
+	model: "faux-1",
+	faux: true,
+	cwd: join(tmpdir(), "mason-demo", "work"),
+	storage: "memory",
+});
+
+const mason = await Mason.open(config);
+await mason.say("hello");
+await mason.close();
+```
+
+`Config.load()` is the other way in, for a bot that lives in a home someone edits:
+
+```ts
+const config = await Config.load({ home: "~/.mason/default" });
+```
+
 ## The home
 
 `Config.load()` reads it, creating what is missing:
@@ -51,7 +79,8 @@ import { Config, Mason } from "mason-agent";
 ```
 
 `settings.json` names the model; `MASON_PROVIDER`, `MASON_MODEL` and `MASON_FAUX_MODEL=1` override it, which is how a
-test runs with no key and no network.
+test runs with no key and no network. A config made with `Config.create()` skips all of it: the home it names holds the
+layout, and nothing else in it is read.
 
 ## What the boot installs
 
@@ -69,7 +98,7 @@ variables, because a tool call is arbitrary code in the agent's shell.
 ## Commands
 
 ```bash
-npm run demo        # a script in src/ using the package
+npm run demo        # a script in src/ that builds its bot in code
 npm test            # one turn through the offline provider, and two error paths
 npm run typecheck
 nix develop         # the same node, sqlite and search tools the suite expects

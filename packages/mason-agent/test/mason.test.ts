@@ -3,6 +3,7 @@
  * assemble by hand. No network, no key. The tools are installed, but the model never calls one.
  */
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,9 +26,9 @@ function textOf(entry: EntryRecord): string {
 test("a home answers one turn and stores it", async () => {
 	const dir = await home();
 	try {
-		const config = await Config.load({ home: dir, faux: true });
+		const config = await Config.load({ home: dir, faux: true, storage: "memory" });
 		assert.equal(await readFile(config.soulPath, "utf8"), `${DEFAULT_SOUL}\n`, "the soul is seeded, not invented twice");
-		const mason = await Mason.open(config, { storage: "memory" });
+		const mason = await Mason.open(config);
 		try {
 			assert.equal(mason.model.provider, "faux");
 			assert.equal(mason.modelIsFaux, true);
@@ -60,6 +61,36 @@ test("a home with no model says which file to write", async () => {
 	} finally {
 		if (saved.provider !== undefined) process.env.MASON_PROVIDER = saved.provider;
 		if (saved.model !== undefined) process.env.MASON_MODEL = saved.model;
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
+test("a config made in code needs nothing on disk", async () => {
+	const dir = await home();
+	try {
+		const config = Config.create({
+			home: join(dir, "fresh"),
+			soul: "You are a bot made in code.",
+			profile: "Someone testing that no home has to exist first.",
+			provider: "faux",
+			model: "faux-1",
+			faux: true,
+			cwd: join(dir, "fresh", "work"),
+			storage: "memory",
+		});
+		assert.equal(config.soul, "You are a bot made in code.", "the soul is the string given, not a file read");
+		assert.match(config.prompt(), /^You are a bot made in code\./);
+		assert.match(config.prompt(), /Someone testing that no home has to exist first\./);
+		assert.ok(existsSync(config.device.cwd), "a local cwd exists before a tool runs in it");
+
+		const mason = await Mason.open(config);
+		try {
+			assert.equal((await mason.say("hi")).status, "done");
+			assert.equal((await mason.entries()).filter((entry) => entry.kind === "pi.assistant").length, 1);
+		} finally {
+			await mason.close();
+		}
+	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
 });

@@ -1,8 +1,12 @@
 /**
- * The config: a bot's home on disk, read once into a value.
+ * The config: a bot, described once.
  *
- * It does no work. Every path it hands out, every setting it exposes, is a fact read in `load()` and never again, so a
- * `Mason` opened from a `Config` behaves the same twice in the same process. Files are the interface; there is no other.
+ * There are two ways to make one, and they differ in where the facts come from, not in what a config is.
+ *
+ * - `Config.load()` reads a home on disk: `service/settings.json`, `service/soul.md`, `agent/profile.md`.
+ * - `Config.create()` takes every fact in code. It reads nothing, so nothing has to exist first.
+ *
+ * Either way the layout is the same, and `Mason` cannot tell the difference.
  *
  * ```text
  * <home>/
@@ -15,11 +19,10 @@
  *     └── data/         # agent.sqlite
  * ```
  *
- * `home` is `MASON_HOME`, or an explicit path, or `~/.mason/default`. A missing `soul.md` is created from `DEFAULT_SOUL`;
- * a missing `settings.json` is not, because a bot with no model named cannot answer and a file invented here would say
- * which model to use when nobody chose one.
+ * A config holds its own text, so `prompt()` does no I/O: editing `soul.md` changes the file, and the next `load()`
+ * reads it. `create()` does not write `soul.md` at all — a config made in code is not a home someone edits by hand.
  */
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -32,25 +35,49 @@ export type ExecutionDevice =
 	| { readonly kind: "local"; readonly cwd: string }
 	| { readonly kind: "ssh"; readonly cwd: string; readonly ssh: SshTarget };
 
+/** Where the transcript lives. `memory` keeps it in RAM: a test, a demo, a throwaway run. */
+export type StorageKind = "sqlite" | "memory";
+
+/** Everything a bot is, in code. Nothing is read from anywhere. */
+export interface ConfigInit {
+	/** The home the layout hangs below. Created when missing; it may be the only thing on disk. */
+	readonly home: string;
+	readonly provider?: string;
+	readonly model?: string;
+	readonly thinking?: ModelThinkingLevel;
+	/** The first section of the prompt. `DEFAULT_SOUL` when absent. */
+	readonly soul?: string;
+	/** Who the person is: the section after the soul. */
+	readonly profile?: string;
+	readonly device?: "local" | "ssh";
+	/** The directory tools run in. `<home>/agent/workspace` when absent. */
+	readonly cwd?: string;
+	/** The SSH target, when `device` is `"ssh"`. Absent, it is read from `PI_ENV_SSH_*`. */
+	readonly ssh?: SshTarget;
+	readonly storage?: StorageKind;
+	/** Plays the offline provider, for a test or a demo. */
+	readonly faux?: boolean;
+}
+
+/** The disk half: which home, and what overrides it. Every other field comes from the files. */
+export interface LoadInit {
+	/** `MASON_HOME`, or the home to serve. Default `~/.mason/default`. */
+	readonly home?: string;
+	readonly provider?: string;
+	readonly model?: string;
+	readonly thinking?: ModelThinkingLevel;
+	readonly device?: "local" | "ssh";
+	readonly cwd?: string;
+	readonly storage?: StorageKind;
+	readonly faux?: boolean;
+}
+
 export interface SettingsFile {
 	readonly provider?: string;
 	readonly model?: string;
 	readonly thinking?: ModelThinkingLevel;
 	readonly device?: { readonly kind?: "local" | "ssh"; readonly cwd?: string };
-}
-
-export interface ConfigInit {
-	/** `MASON_HOME`, or the home to serve. Default `~/.mason/default`. */
-	readonly home?: string;
-	/** Overrides `service/settings.json`, and the last word on the model this boot runs. */
-	readonly provider?: string;
-	readonly model?: string;
-	readonly thinking?: ModelThinkingLevel;
-	/** Overrides the settings file's device. An ssh target is read from `PI_ENV_SSH_*` when `"ssh"` is given. */
-	readonly device?: "local" | "ssh";
-	readonly cwd?: string;
-	/** Plays the offline provider, for a test or a demo. */
-	readonly faux?: boolean;
+	readonly storage?: StorageKind;
 }
 
 export class Config {
@@ -67,7 +94,10 @@ export class Config {
 	readonly model?: string;
 	readonly thinking: ModelThinkingLevel;
 	readonly device: ExecutionDevice;
+	readonly storage: StorageKind;
 	readonly faux: boolean;
+	readonly soul: string;
+	readonly profile?: string;
 
 	private constructor(init: {
 		home: string;
@@ -75,13 +105,15 @@ export class Config {
 		model?: string;
 		thinking: ModelThinkingLevel;
 		device: ExecutionDevice;
+		storage: StorageKind;
 		faux: boolean;
+		soul: string;
+		profile?: string;
 	}) {
 		this.home = init.home;
 		this.agentDir = join(init.home, "agent");
 		this.serviceDir = join(init.home, "service");
-		this.workspaceDir =
-			init.device.cwd !== "" ? init.device.cwd : join(this.agentDir, "workspace");
+		this.workspaceDir = join(this.agentDir, "workspace");
 		this.dataDir = join(this.serviceDir, "data");
 		this.soulPath = join(this.serviceDir, "soul.md");
 		this.profilePath = join(this.agentDir, "profile.md");
@@ -90,45 +122,74 @@ export class Config {
 		this.model = init.model;
 		this.thinking = init.thinking;
 		this.device = init.device;
+		this.storage = init.storage;
 		this.faux = init.faux;
+		this.soul = init.soul;
+		this.profile = init.profile;
 	}
 
-	/** Read the home once. Creates the layout, and `soul.md` when it is the only thing missing. */
-	static async load(init: ConfigInit = {}): Promise<Config> {
-		const home = resolve(expandHome(init.home ?? process.env.MASON_HOME ?? join(homedir(), ".mason", "default")));
-		const settings = await readSettings(join(home, "service", "settings.json"));
-		const agentDir = join(home, "agent");
-		const serviceDir = join(home, "service");
-		// The workspace is the default the device inherits, and it is the agent's half: a home whose workspace sat in
-		// `service/` would give the tools the directory the soul lives in.
-		const workspaceDir = join(agentDir, "workspace");
-		await mkdir(join(workspaceDir, "out"), { recursive: true, mode: 0o700 });
-		await mkdir(join(serviceDir, "data"), { recursive: true, mode: 0o700 });
-		const soulPath = join(serviceDir, "soul.md");
-		if (!existsSync(soulPath)) await writeFile(soulPath, `${DEFAULT_SOUL}\n`, { mode: 0o600 });
-
-		const kind = init.device ?? settings.device?.kind ?? (process.env.PI_ENV_SSH_HOST ? "ssh" : "local");
-		const cwd = init.cwd ?? settings.device?.cwd ?? "";
+	/**
+	 * A config made in code. Synchronous and I/O-free past the directories the layout needs, so a caller can name every
+	 * fact: the model, the prompt, the device, the directory tools run in, and whether the transcript touches disk.
+	 */
+	static create(init: ConfigInit): Config {
+		const home = resolve(expandHome(init.home));
+		// The workspace is the device's default and it is the agent's half: a workspace in `service/` would give the tools
+		// the directory the soul lives in.
+		const workspaceDir = join(home, "agent", "workspace");
+		for (const dir of [join(workspaceDir, "out"), join(home, "service", "data")]) {
+			mkdirSync(dir, { recursive: true, mode: 0o700 });
+		}
+		const cwd = init.cwd === undefined ? workspaceDir : resolve(expandHome(init.cwd));
+		const kind = init.device ?? "local";
+		// A local cwd is this machine's, so it must exist before a tool runs in it. An ssh cwd is the remote's, and only
+		// the connection can tell whether it does.
+		if (kind === "local") mkdirSync(cwd, { recursive: true, mode: 0o700 });
 		const device: ExecutionDevice =
 			kind === "ssh"
-				? { kind, cwd: cwd === "" ? workspaceDir : resolve(expandHome(cwd)), ssh: requireSsh() }
-				: { kind: "local", cwd: cwd === "" ? workspaceDir : resolve(expandHome(cwd)) };
-
+				? { kind, cwd, ssh: init.ssh ?? requireSsh() }
+				: { kind: "local", cwd };
 		return new Config({
+			home,
+			provider: init.provider,
+			model: init.model,
+			thinking: init.thinking ?? "off",
+			device,
+			storage: init.storage ?? "sqlite",
+			faux: init.faux ?? false,
+			soul: init.soul ?? DEFAULT_SOUL,
+			profile: init.profile,
+		});
+	}
+
+	/** Read a home once. Creates the layout, and `soul.md` when it is the only thing missing. */
+	static async load(init: LoadInit = {}): Promise<Config> {
+		const home = resolve(expandHome(init.home ?? process.env.MASON_HOME ?? join(homedir(), ".mason", "default")));
+		const settings = await readSettings(join(home, "service", "settings.json"));
+		const soulPath = join(home, "service", "soul.md");
+		await mkdir(join(home, "agent", "workspace", "out"), { recursive: true, mode: 0o700 });
+		await mkdir(join(home, "service", "data"), { recursive: true, mode: 0o700 });
+		if (!existsSync(soulPath)) await writeFile(soulPath, `${DEFAULT_SOUL}\n`, { mode: 0o600 });
+
+		return Config.create({
 			home,
 			provider: init.provider ?? settings.provider ?? process.env.MASON_PROVIDER,
 			model: init.model ?? settings.model ?? process.env.MASON_MODEL,
-			thinking: init.thinking ?? settings.thinking ?? "off",
-			device,
+			thinking: init.thinking ?? settings.thinking,
+			soul: await readFile(soulPath, "utf8"),
+			profile: await readOptional(join(home, "agent", "profile.md")),
+			device: init.device ?? settings.device?.kind ?? (process.env.PI_ENV_SSH_HOST ? "ssh" : "local"),
+			cwd: init.cwd ?? settings.device?.cwd,
+			storage: init.storage ?? settings.storage,
 			faux: init.faux === true || process.env.MASON_FAUX_MODEL === "1",
 		});
 	}
 
-	/** The system prompt this home renders right now: soul, profile, and the rules that never change. */
-	async prompt(): Promise<string> {
+	/** The system prompt this config renders right now: soul, profile, and the rules that never change. */
+	prompt(): string {
 		return renderPrompt({
-			soul: await readFile(this.soulPath, "utf8"),
-			profile: await readOptional(this.profilePath),
+			soul: this.soul,
+			profile: this.profile,
 			workspaceDir: this.device.cwd,
 		});
 	}
@@ -137,7 +198,7 @@ export class Config {
 function requireSsh(): SshTarget {
 	const target = sshTargetFromEnv();
 	if (target === undefined) {
-		throw new Error('device "ssh" needs PI_ENV_SSH_HOST and PI_ENV_SSH_KNOWN_HOSTS');
+		throw new Error('device "ssh" needs a target or PI_ENV_SSH_HOST and PI_ENV_SSH_KNOWN_HOSTS');
 	}
 	return target;
 }
