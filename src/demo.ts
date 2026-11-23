@@ -20,11 +20,9 @@ const faux = process.env.MASON_FAUX_MODEL === "1";
 
 const config = Config.create({
   home,
-  // The prompt, in code: the identity line, and who it works for.
   soul: "You are mason, a demo assistant with one job: answer in one short sentence and stop.",
   profile:
     "The person running the demo. They are checking that a bot can be built without a config directory.",
-  // The model: a local server in code, or the offline provider when MASON_FAUX_MODEL=1.
   provider: faux ? "faux" : "ollama",
   model: faux ? "faux-1" : "bonsai-2:9b",
   faux,
@@ -32,7 +30,6 @@ const config = Config.create({
     ? {}
     : { endpoint: { baseUrl: "http://127.0.0.1:11434/v1", apiKey: "ollama" } }),
   thinking: "off",
-  // Where tools would run, and where the transcript lives.
   device: "local",
   cwd: join(home, "work"),
   storage: "memory",
@@ -49,8 +46,22 @@ try {
   console.log(`store: ${config.storage}`);
   console.log(`prompt: ${Object.keys(config.prompt).join(", ")}`);
 
+  // Progress, so a slow turn is not a silence: the watch holds the conversation open while the interval prints each
+  // entry as it commits.
+  let seen = 0;
+  const stop = await mason.watch(() => {});
+  const progress = setInterval(async () => {
+    const entries = await mason.entries();
+    if (entries.length > seen) {
+      seen = entries.length;
+      console.log(`  ... ${entries[entries.length - 1].kind}`);
+    }
+  }, 250);
+
   const started = Date.now();
-  const settled = await mason.say("hello, who are you?");
+  const settled = await mason.say("waht does wabalabadubdub mean?", { timeoutMs: 120_000 });
+  clearInterval(progress);
+  await stop();
   console.log(
     `turn:  ${settled.status} in ${((Date.now() - started) / 1000).toFixed(1)}s`,
   );

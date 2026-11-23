@@ -13,7 +13,7 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Context } from "@earendil-works/chord";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import type { ModelThinkingLevel, Models, Provider } from "@earendil-works/pi-ai";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai/providers/faux";
@@ -23,6 +23,7 @@ import {
 	type AgentState,
 	type Conversation,
 	type ConversationId,
+	type ConversationView,
 	configure,
 	createRegistry,
 	type EntryRecord,
@@ -30,6 +31,7 @@ import {
 	Harness,
 	MemoryStorage,
 	type Storage,
+	type Report,
 	type Submission,
 	type SettledSubmissionRecord,
 } from "@earendil-works/pi-durable";
@@ -48,6 +50,11 @@ export interface ModelRef {
 export interface MasonOptions {
 	/** Overrides every harness setting this boot would otherwise choose. */
 	readonly settings?: HarnessSettings;
+	/**
+	 * Failures that do not fail the calling operation: a faulted task, a throwing listener, a storage failure. The
+	 * default prints one line to stderr, because a run that quietly retries is indistinguishable from one that hung.
+	 */
+	readonly onReport?: (report: Report) => void;
 }
 
 
@@ -104,6 +111,7 @@ export class Mason {
 					models,
 					registry,
 					...(options.settings === undefined ? {} : { settings: options.settings }),
+					onReport: options.onReport ?? reportToStderr,
 					env: async (target) => device.envFor({ conversationId: String(target.conversationId), cwd: target.cwd }),
 				},
 				BACKGROUND_CONTEXT,
@@ -140,10 +148,20 @@ export class Mason {
 		return page.items;
 	}
 
-	/** One turn: admit the message, wait for the run to settle, and answer with the receipt. */
-	async say(text: string, options: { requestId?: string } = {}): Promise<SettledSubmissionRecord> {
+	/**
+	 * One turn: admit the message, wait for the run to settle, and answer with the receipt.
+	 *
+	 * `timeoutMs` cancels the *wait*, not the work: the run is durable and keeps going, and the rejection says so. A
+	 * caller that would rather hear about a slow model than about nothing passes one.
+	 */
+	async say(
+		text: string,
+		options: { requestId?: string; timeoutMs?: number } = {},
+	): Promise<SettledSubmissionRecord> {
 		const submission = await this.submit(text, options);
-		return submission.wait(this.#context);
+		if (options.timeoutMs === undefined) return submission.wait(this.#context);
+		const timeout = AbortSignal.timeout(options.timeoutMs);
+		return submission.wait(withAbortSignal(timeout, this.#context));
 	}
 
 	/** Admit one message from the person and return the submission, before anything has run. */
@@ -154,11 +172,29 @@ export class Mason {
 		);
 	}
 
+	/**
+	 * Follow the conversation as it commits. The listener gets every next view; the answer is the stop function, which
+	 * resolves when the watch has ended. A caller that wants progress while a turn runs calls this before `say()`.
+	 */
+	async watch(listener: (view: ConversationView) => void): Promise<() => Promise<void>> {
+		const handle = await this.root.watch(this.#context);
+		handle.start(async (call) => {
+			if (call.kind === "value") listener(call.value);
+		});
+		return () => handle.stop().then(() => undefined);
+	}
+
 	/** Close the daemon and the storage. Idempotent. */
 	async close(): Promise<void> {
 		await this.harness.close(this.#context);
 		await this.#device.close();
 	}
+}
+
+/** The one-line default: enough to say which failure it was, without a stack for every retry. */
+function reportToStderr(report: Report): void {
+	const message = report.error instanceof Error ? report.error.message : String(report.error);
+	console.error(`mason: ${report.kind}: ${message}`);
 }
 
 /**
