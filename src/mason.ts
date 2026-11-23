@@ -1,11 +1,7 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { Provider } from "@earendil-works/pi-ai";
-import { createModels } from "@earendil-works/pi-ai/models";
-import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai/providers/faux";
-import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import {
 	AgentDoc,
 	configure,
@@ -17,56 +13,18 @@ import {
 } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
-import { Connection, localDaemon, RemoteExecutionEnv } from "@earendil-works/pi-env";
+import { localDevice } from "./device.ts";
 import { ensureHome, home } from "./home.ts";
+import { connectModels, fauxModels } from "./models.ts";
 import { DEFAULT_SOUL, promptExtension } from "./prompt.ts";
 
-const MODEL = { provider: "ollama", modelId: "bonsai-2:9b" };
-const ENDPOINT = "http://127.0.0.1:11434/v1";
-
-async function openModels(dataDir: string, faux: boolean) {
-	if (faux) {
-		const provider = fauxProvider();
-		const models = createModels();
-		models.setProvider(provider.provider as Provider);
-		provider.setResponses(Array.from({ length: 100 }, () => fauxAssistantMessage(fauxText("ok"))));
-		return { models, ref: { provider: "faux", modelId: "faux-1" } };
-	}
-	const modelsPath = join(dataDir, "models.json");
-	await writeFile(
-		modelsPath,
-		`${JSON.stringify(
-			{
-				providers: {
-					[MODEL.provider]: {
-						api: "openai-completions",
-						apiKey: "local",
-						baseUrl: ENDPOINT,
-						models: [{ id: MODEL.modelId }],
-					},
-				},
-			},
-			null,
-			2,
-		)}\n`,
-	);
-	const runtime = await ModelRuntime.create({ allowModelNetwork: false, modelsPath, refreshOnCreate: false });
-	return { models: runtime, ref: MODEL };
-}
-
-function openDevice(workspaceDir: string) {
-	const connection = new Connection({
-		command: [
-			"/usr/bin/env",
-			"-i",
-			`PATH=${process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin"}`,
-			`HOME=${homedir()}`,
-			localDaemon(),
-		],
-	});
-	const env = new RemoteExecutionEnv({ connection, id: "pi-env:local", cwd: workspaceDir });
-	return { env, close: () => connection.close() };
-}
+const ENDPOINT = {
+	provider: "ollama",
+	modelId: "bonsai-2:9b",
+	api: "openai-completions",
+	baseUrl: "http://127.0.0.1:11434/v1",
+	apiKey: "local",
+};
 
 async function open(options: { home: string; memory?: boolean; faux?: boolean }): Promise<{
 	root: Conversation;
@@ -75,11 +33,12 @@ async function open(options: { home: string; memory?: boolean; faux?: boolean })
 	const paths = home(options.home);
 	await ensureHome(paths, DEFAULT_SOUL);
 
-	const { models, ref } = await openModels(paths.dataDir, options.faux === true);
+	const { models, ref } =
+		options.faux === true ? fauxModels() : await connectModels(ENDPOINT, paths.dataDir);
 	const registry = createRegistry();
 	registry.install(CodingTools);
 	registry.install(promptExtension(paths));
-	const device = openDevice(paths.workspaceDir);
+	const device = localDevice(paths.workspaceDir);
 	const storage =
 		options.memory === true
 			? new MemoryStorage()
