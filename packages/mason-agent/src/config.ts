@@ -28,7 +28,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { type SshTarget, sshTargetFromEnv } from "./env.ts";
-import { DEFAULT_SOUL, renderPrompt } from "./prompt.ts";
+import { DEFAULT_SOUL, DELIVERY, TONE, type PromptSections, workspaceSection } from "./prompt.ts";
 
 /** Where tools run. `local` is this machine; `ssh` is a machine pi-env reaches with the key beside it. */
 export type ExecutionDevice =
@@ -207,13 +207,18 @@ export class Config {
 		});
 	}
 
-	/** The system prompt this config renders right now: soul, profile, and the rules that never change. */
-	prompt(): string {
-		return renderPrompt({
+	/**
+	 * The system prompt as data: one key per section, the text of that section as the value. Computed from the config,
+	 * so a caller can read or replace one section without rebuilding the rest.
+	 */
+	get prompt(): PromptSections {
+		return {
 			soul: this.soul,
-			profile: this.profile,
-			workspaceDir: this.device.cwd,
-		});
+			...(this.profile === undefined || this.profile.trim() === "" ? {} : { profile: this.profile }),
+			tone: TONE,
+			workspace: workspaceSection(this.device.cwd),
+			delivery: DELIVERY,
+		};
 	}
 }
 

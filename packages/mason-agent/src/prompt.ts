@@ -1,14 +1,18 @@
 /**
- * The prompt: the whole of it, in one file, in the order it is read.
+ * The prompt: the sections it is built from, in the order they are read.
  *
- * A turn starts with who is speaking and how it speaks. Everything after that is a fact about the world the caller
- * supplied, never a rule about a subsystem that may not be installed: this build has no skills, no routines, no
- * connectors, so the text does not mention them.
+ * A turn starts with who is speaking and how it speaks. Everything after that is a fact the caller supplied, never a
+ * rule about a subsystem that may not be installed: this build has no skills, no routines, no connectors, so the text
+ * does not mention them.
+ *
+ * `PromptSections` is the prompt as data, which is what `Config.prompt` is: one key per section, the text of that
+ * section as the value. `renderPrompt` is the only place they are joined, so a caller that wants the whole thing gets
+ * it from the same order the model reads.
  */
 export const DEFAULT_SOUL = `You are mason: an assistant that runs continuously on one machine and works for one person.
 The profile below is that person. What it says about the work is the work.`;
 
-/** How the agent speaks. The rules name what to put in a turn, because brevity is a property of a turn, not a tone. */
+/** How the agent speaks. The rules name what to put in a turn, because brevity is a property of a turn. */
 export const TONE = `Write as a colleague would message them: plain sentences, your own voice.
 - One short paragraph first. Use a list only when the content is a list.
 - Say what you are about to do before the first action of a turn, then what came of it.
@@ -21,24 +25,27 @@ export const DELIVERY = `What you write after your last action is the message th
 it. A turn that ends without writing anything leaves them with silence. Write something, even one line.`;
 
 /** Where work lands: the one directory the person can look at, and the link shape that carries a file out of it. */
-export const WORKSPACE = `Your working directory is below. A file you make for them goes under \`out/\` there, and a link to it is
+export function workspaceSection(cwd: string): string {
+	return `Your working directory is \`${cwd}\`. A file you make for them goes under \`out/\` there, and a link to it is
 \`[name](file:out/name.ext)\`. Nothing outside \`out/\` is attached, so what matters is \`out/\`, not the link.`;
-
-export interface PromptInput {
-	/** `service/soul.md`: the operator's file, and the first thing the model reads. */
-	readonly soul: string;
-	/** `agent/profile.md`: who the person is, as the agent last wrote it. Absent on a fresh home. */
-	readonly profile?: string;
-	/** The directory tools run in, absolute. */
-	readonly workspaceDir: string;
 }
 
-/** The sections in order, separated by a blank line. The only place the prompt is assembled. */
-export function renderPrompt(input: PromptInput): string {
-	const sections = [input.soul.trim(), TONE, WORKSPACE, DELIVERY];
-	if (input.profile !== undefined && input.profile.trim() !== "") {
-		sections.splice(1, 0, `## Who you work for\n\n${input.profile.trim()}`);
-	}
-	sections.splice(2, 0, `## Where you work\n\n${input.workspaceDir}`);
-	return sections.join("\n\n");
+/**
+ * The prompt as data: one section per key, in render order. `profile` is absent rather than empty, because a prompt that
+ * told the model it works for nobody would be worse than one that did not mention it.
+ */
+export interface PromptSections {
+	readonly soul: string;
+	readonly profile?: string;
+	readonly tone: string;
+	readonly workspace: string;
+	readonly delivery: string;
+}
+
+/** Join the sections in order. The only place the prompt is one string. */
+export function renderPrompt(sections: PromptSections): string {
+	return [sections.soul, sections.profile, sections.tone, sections.workspace, sections.delivery]
+		.filter((section): section is string => section !== undefined && section.trim() !== "")
+		.map((section) => section.trim())
+		.join("\n\n");
 }

@@ -73,6 +73,14 @@ const config = Config.create({
 Mason writes it into its own `service/data/models.json` and points pi's catalog at that file, so nothing reads
 `~/.pi/agent`. Any server that speaks `/v1/chat/completions` works the same way.
 
+`config.prompt` is the prompt as data — one key per section, in the order the model reads them:
+
+```ts
+config.prompt;   // { soul, profile?, tone, workspace, delivery }
+```
+
+`renderPrompt(config.prompt)` is what turns it into the `instructions` string the harness stores.
+
 `Config.load()` is the other way in, for a bot that lives in a home someone edits:
 
 ```ts

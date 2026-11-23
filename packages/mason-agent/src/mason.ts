@@ -37,6 +37,7 @@ import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import type { Config } from "./config.ts";
 import { Device } from "./env.ts";
+import { renderPrompt } from "./prompt.ts";
 
 /** A model, named the way every pi package names one. */
 export interface ModelRef {
@@ -113,7 +114,7 @@ export class Mason {
 		}
 
 		try {
-			const instructions = config.prompt();
+			const instructions = renderPrompt(config.prompt);
 			const root = await harness.root(BACKGROUND_CONTEXT, {
 				agent: { model: ref, cwd: config.device.cwd, instructions },
 			});

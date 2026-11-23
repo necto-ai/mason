@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { AgentDoc, type EntryRecord } from "@earendil-works/pi-durable";
-import { Config, DEFAULT_SOUL, Mason } from "../src/index.ts";
+import { Config, DEFAULT_SOUL, Mason, renderPrompt } from "../src/index.ts";
 
 const home = () => mkdtemp(join(tmpdir(), "mason-sdk-"));
 
@@ -28,6 +28,7 @@ test("a home answers one turn and stores it", async () => {
 	try {
 		const config = await Config.load({ home: dir, faux: true, storage: "memory" });
 		assert.equal(await readFile(config.soulPath, "utf8"), `${DEFAULT_SOUL}\n`, "the soul is seeded, not invented twice");
+		assert.equal(config.prompt.soul, `${DEFAULT_SOUL}\n`, "and the config holds it as text, straight from the file");
 		const mason = await Mason.open(config);
 		try {
 			assert.equal(mason.model.provider, "faux");
@@ -79,8 +80,11 @@ test("a config made in code needs nothing on disk", async () => {
 			storage: "memory",
 		});
 		assert.equal(config.soul, "You are a bot made in code.", "the soul is the string given, not a file read");
-		assert.match(config.prompt(), /^You are a bot made in code\./);
-		assert.match(config.prompt(), /Someone testing that no home has to exist first\./);
+		assert.deepEqual(Object.keys(config.prompt), ["soul", "profile", "tone", "workspace", "delivery"]);
+		assert.equal(config.prompt.soul, "You are a bot made in code.");
+		assert.equal(config.prompt.profile, "Someone testing that no home has to exist first.");
+		assert.match(config.prompt.workspace, new RegExp(config.device.cwd), "the workspace section names the cwd");
+		assert.match(renderPrompt(config.prompt), /^You are a bot made in code\./);
 		assert.ok(existsSync(config.device.cwd), "a local cwd exists before a tool runs in it");
 
 		const mason = await Mason.open(config);
