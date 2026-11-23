@@ -22,7 +22,7 @@ export function home(path: string): Home {
 		agentDir,
 		serviceDir,
 		soul: join(serviceDir, "soul.md"),
-		profile: join(serviceDir, "profile.md"),
+		profile: join(agentDir, "profile.md"),
 		logDir: join(agentDir, "log"),
 		skillsDir: join(agentDir, "skills"),
 		workspaceDir: join(agentDir, "workspace"),
