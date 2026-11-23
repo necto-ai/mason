@@ -10,6 +10,7 @@
  * bash through the execution device) and the system prompt, which is not an extension at all — it is `pi.agent`'s
  * `instructions`, stored in the conversation, so a home whose soul was edited is corrected by one commit at boot.
  */
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Context } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -172,6 +173,29 @@ async function applyInstructions(harness: Harness, conversationId: ConversationI
 	await conversation.commit((tx) => configure(tx, conversationId, { instructions }), BACKGROUND_CONTEXT);
 }
 
+/**
+ * `service/data/models.json`, in the shape pi's catalog reads: one provider, the base URL, its key, and the one model.
+ * Written at open, so an edited port or model name takes effect at the next boot and the file never drifts from the
+ * config that produced it.
+ */
+async function writeCatalog(config: Config): Promise<void> {
+	const endpoint = config.endpoint;
+	if (endpoint === undefined || config.provider === undefined || config.model === undefined) {
+		throw new Error("an endpoint needs a provider and a model: name both beside it");
+	}
+	const catalog = {
+		providers: {
+			[config.provider]: {
+				api: endpoint.api ?? "openai-completions",
+				apiKey: endpoint.apiKey ?? "local",
+				baseUrl: endpoint.baseUrl,
+				models: [{ id: config.model }],
+			},
+		},
+	};
+	await writeFile(config.modelsPath, `${JSON.stringify(catalog, null, 2)}\n`, { mode: 0o600 });
+}
+
 /** The model this home runs, and the access that answers for it. */
 async function openModels(
 	config: Config,
@@ -190,8 +214,12 @@ async function openModels(
 			`No model configured for ${config.home}: set provider and model in ${config.settingsPath}, or MASON_PROVIDER and MASON_MODEL`,
 		);
 	}
-	// The catalog and the credential store are pi's, read with the network off. A key set from a store here is a runtime
-	// key: it lives for this process, and nothing writes it back.
-	const runtime = await ModelRuntime.create({ allowModelNetwork: false });
+	// An endpoint named in code is written into mason's own catalog file, and pi's runtime is pointed at that file instead
+	// of the agent directory's. Nothing here reads `~/.pi`.
+	if (config.endpoint !== undefined) await writeCatalog(config);
+	const runtime = await ModelRuntime.create({
+		allowModelNetwork: false,
+		...(config.endpoint === undefined ? {} : { modelsPath: config.modelsPath, refreshOnCreate: false }),
+	});
 	return { models: runtime, ref: { provider: config.provider, modelId: config.model }, faux: false };
 }

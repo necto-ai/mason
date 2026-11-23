@@ -38,6 +38,19 @@ export type ExecutionDevice =
 /** Where the transcript lives. `memory` keeps it in RAM: a test, a demo, a throwaway run. */
 export type StorageKind = "sqlite" | "memory";
 
+/**
+ * An OpenAI-compatible endpoint named in code: a local server, a gateway, anything that speaks
+ * `/v1/chat/completions`. Mason writes it into its own `service/data/models.json` and points pi's catalog at that file,
+ * so nothing here reads or writes pi's agent directory.
+ */
+export interface Endpoint {
+	readonly baseUrl: string;
+	/** Sent as the bearer token. A local server ignores it; a gateway does not. */
+	readonly apiKey?: string;
+	/** The API family. Default `openai-completions`. */
+	readonly api?: string;
+}
+
 /** Everything a bot is, in code. Nothing is read from anywhere. */
 export interface ConfigInit {
 	/** The home the layout hangs below. Created when missing; it may be the only thing on disk. */
@@ -55,6 +68,8 @@ export interface ConfigInit {
 	/** The SSH target, when `device` is `"ssh"`. Absent, it is read from `PI_ENV_SSH_*`. */
 	readonly ssh?: SshTarget;
 	readonly storage?: StorageKind;
+	/** A server to reach instead of a catalogued provider: `http://127.0.0.1:11434/v1`. */
+	readonly endpoint?: Endpoint;
 	/** Plays the offline provider, for a test or a demo. */
 	readonly faux?: boolean;
 }
@@ -98,6 +113,9 @@ export class Config {
 	readonly faux: boolean;
 	readonly soul: string;
 	readonly profile?: string;
+	readonly endpoint?: Endpoint;
+	/** Where mason writes the catalog for `endpoint`, and what pi's runtime is pointed at. */
+	readonly modelsPath: string;
 
 	private constructor(init: {
 		home: string;
@@ -109,6 +127,7 @@ export class Config {
 		faux: boolean;
 		soul: string;
 		profile?: string;
+		endpoint?: Endpoint;
 	}) {
 		this.home = init.home;
 		this.agentDir = join(init.home, "agent");
@@ -126,6 +145,8 @@ export class Config {
 		this.faux = init.faux;
 		this.soul = init.soul;
 		this.profile = init.profile;
+		this.endpoint = init.endpoint;
+		this.modelsPath = join(this.dataDir, "models.json");
 	}
 
 	/**
@@ -159,6 +180,7 @@ export class Config {
 			faux: init.faux ?? false,
 			soul: init.soul ?? DEFAULT_SOUL,
 			profile: init.profile,
+			endpoint: init.endpoint,
 		});
 	}
 

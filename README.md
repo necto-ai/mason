@@ -57,6 +57,22 @@ await mason.say("hello");
 await mason.close();
 ```
 
+A local server is an endpoint, not a catalog entry:
+
+```ts
+const config = Config.create({
+	home: join(tmpdir(), "mason-demo"),
+	provider: "ollama",
+	model: "bonsai-2:9b",
+	endpoint: { baseUrl: "http://127.0.0.1:11434/v1", apiKey: "ollama" },
+	cwd: join(tmpdir(), "mason-demo", "work"),
+	storage: "memory",
+});
+```
+
+Mason writes it into its own `service/data/models.json` and points pi's catalog at that file, so nothing reads
+`~/.pi/agent`. Any server that speaks `/v1/chat/completions` works the same way.
+
 `Config.load()` is the other way in, for a bot that lives in a home someone edits:
 
 ```ts
@@ -99,7 +115,8 @@ variables, because a tool call is arbitrary code in the agent's shell.
 
 ```bash
 npm run demo        # a script in src/ that builds its bot in code
-npm test            # one turn through the offline provider, and two error paths
+npm test            # offline: the faux provider, and the error paths
+MASON_LIVE=1 npm test   # one extra turn against the endpoint above
 npm run typecheck
 nix develop         # the same node, sqlite and search tools the suite expects
 ```
