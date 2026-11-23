@@ -1,15 +1,3 @@
-/**
- * The mason SDK: one class that opens a bot.
- *
- * `Mason` is a pi-durable `Harness` with a home behind it. It reads nothing itself — everything it runs came from the
- * `Config` it was opened with — and it exposes the conversation, not a protocol: `submit()` admits a turn, `entries()`
- * reads the transcript, `close()` drains. There is no server here, no connector, no wire. A caller that wants a door
- * builds one on top of this.
- *
- * Two things are in the boot because they are pi-durable's own, not extensions of ours: `CodingTools` (read, write, edit,
- * bash through the execution device) and the system prompt, which is not an extension at all — it is `pi.agent`'s
- * `instructions`, stored in the conversation, so a home whose soul was edited is corrected by one commit at boot.
- */
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Context } from "@earendil-works/chord";
@@ -41,33 +29,24 @@ import type { Config } from "./config.ts";
 import { Device } from "./env.ts";
 import { renderPrompt } from "./prompt.ts";
 
-/** A model, named the way every pi package names one. */
 export interface ModelRef {
 	readonly provider: string;
 	readonly modelId: string;
 }
 
 export interface MasonOptions {
-	/** Overrides every harness setting this boot would otherwise choose. */
 	readonly settings?: HarnessSettings;
-	/**
-	 * Failures that do not fail the calling operation: a faulted task, a throwing listener, a storage failure. The
-	 * default prints one line to stderr, because a run that quietly retries is indistinguishable from one that hung.
-	 */
 	readonly onReport?: (report: Report) => void;
 }
-
 
 export class Mason {
 	readonly config: Config;
 	readonly harness: Harness;
 	readonly root: Conversation;
 	readonly model: ModelRef;
-	/** `false` when the model access is the offline provider, so a caller can say so. */
 	readonly modelIsFaux: boolean;
 	readonly #device: Device;
 	readonly #context: Context;
-
 	private constructor(init: {
 		config: Config;
 		harness: Harness;
@@ -93,16 +72,11 @@ export class Mason {
 			...(config.device.kind === "ssh" ? { ssh: config.device.ssh } : {}),
 		});
 		const registry = createRegistry();
-		// The tools the model works with, straight from pi-durable. Delete this line and the bot answers from the prompt
-		// alone; the execution device below then never starts a daemon.
 		registry.install(CodingTools);
-
-		// Where the transcript lives is a config fact, not an argument: one bot, one answer to it.
 		const storage: Storage =
 			config.storage === "memory"
 				? new MemoryStorage()
 				: await openNodeSqliteStorage(join(config.dataDir, "agent.sqlite"));
-
 		let harness: Harness;
 		try {
 			harness = await Harness.open(
@@ -127,7 +101,6 @@ export class Mason {
 				agent: { model: ref, cwd: config.device.cwd, instructions },
 			});
 			await applyInstructions(harness, root.id, instructions);
-			// Picks up a run the last process left unfinished, and starts the scheduler for new ones.
 			harness.resume();
 			return new Mason({ config, harness, root, model: ref, faux, device, context: BACKGROUND_CONTEXT });
 		} catch (error) {
@@ -137,7 +110,6 @@ export class Mason {
 		}
 	}
 
-	/** One committed read of the transcript, oldest first. */
 	async entries(limit = 50): Promise<readonly EntryRecord[]> {
 		const page = await this.root.entries(
 			{ order: "ascending" },
@@ -148,12 +120,6 @@ export class Mason {
 		return page.items;
 	}
 
-	/**
-	 * One turn: admit the message, wait for the run to settle, and answer with the receipt.
-	 *
-	 * `timeoutMs` cancels the *wait*, not the work: the run is durable and keeps going, and the rejection says so. A
-	 * caller that would rather hear about a slow model than about nothing passes one.
-	 */
 	async say(
 		text: string,
 		options: { requestId?: string; timeoutMs?: number } = {},
@@ -164,7 +130,6 @@ export class Mason {
 		return submission.wait(withAbortSignal(timeout, this.#context));
 	}
 
-	/** Admit one message from the person and return the submission, before anything has run. */
 	async submit(text: string, options: { requestId?: string } = {}): Promise<Submission> {
 		return this.root.submit(
 			{ type: "input", content: text, ...(options.requestId === undefined ? {} : { requestId: options.requestId }) },
@@ -172,10 +137,6 @@ export class Mason {
 		);
 	}
 
-	/**
-	 * Follow the conversation as it commits. The listener gets every next view; the answer is the stop function, which
-	 * resolves when the watch has ended. A caller that wants progress while a turn runs calls this before `say()`.
-	 */
 	async watch(listener: (view: ConversationView) => void): Promise<() => Promise<void>> {
 		const handle = await this.root.watch(this.#context);
 		handle.start(async (call) => {
@@ -184,23 +145,17 @@ export class Mason {
 		return () => handle.stop().then(() => undefined);
 	}
 
-	/** Close the daemon and the storage. Idempotent. */
 	async close(): Promise<void> {
 		await this.harness.close(this.#context);
 		await this.#device.close();
 	}
 }
 
-/** The one-line default: enough to say which failure it was, without a stack for every retry. */
 function reportToStderr(report: Report): void {
 	const message = report.error instanceof Error ? report.error.message : String(report.error);
 	console.error(`mason: ${report.kind}: ${message}`);
 }
 
-/**
- * Config takes effect at boot: `harness.root()` seeds `pi.agent` only when it creates the conversation, so a home whose
- * soul was edited would keep the prompt it was born with. One commit fixes that, and it is a no-op when they agree.
- */
 async function applyInstructions(harness: Harness, conversationId: ConversationId, instructions: string): Promise<void> {
 	const agent = await harness.snapshot(AgentDoc, conversationId, BACKGROUND_CONTEXT);
 	const stored = (agent as AgentState | undefined)?.instructions;
@@ -210,11 +165,6 @@ async function applyInstructions(harness: Harness, conversationId: ConversationI
 	await conversation.commit((tx) => configure(tx, conversationId, { instructions }), BACKGROUND_CONTEXT);
 }
 
-/**
- * `service/data/models.json`, in the shape pi's catalog reads: one provider, the base URL, its key, and the one model.
- * Written at open, so an edited port or model name takes effect at the next boot and the file never drifts from the
- * config that produced it.
- */
 async function writeCatalog(config: Config): Promise<void> {
 	const endpoint = config.endpoint;
 	if (endpoint === undefined || config.provider === undefined || config.model === undefined) {
@@ -233,7 +183,6 @@ async function writeCatalog(config: Config): Promise<void> {
 	await writeFile(config.modelsPath, `${JSON.stringify(catalog, null, 2)}\n`, { mode: 0o600 });
 }
 
-/** The model this home runs, and the access that answers for it. */
 async function openModels(
 	config: Config,
 ): Promise<{ models: Models; ref: ModelRef; faux: boolean }> {
@@ -241,8 +190,6 @@ async function openModels(
 		const faux = fauxProvider();
 		const models = createModels();
 		models.setProvider(faux.provider as Provider);
-		// A queue that empties answers nothing, and an empty answer reads as a dead bot: the offline provider holds
-		// enough answers for a session, not for one turn.
 		faux.setResponses(Array.from({ length: 100 }, () => fauxAssistantMessage(fauxText("ok"))));
 		return { models, ref: { provider: "faux", modelId: "faux-1" }, faux: true };
 	}
@@ -251,8 +198,7 @@ async function openModels(
 			`No model configured for ${config.home}: set provider and model in ${config.settingsPath}, or MASON_PROVIDER and MASON_MODEL`,
 		);
 	}
-	// An endpoint named in code is written into mason's own catalog file, and pi's runtime is pointed at that file instead
-	// of the agent directory's. Nothing here reads `~/.pi`.
+
 	if (config.endpoint !== undefined) await writeCatalog(config);
 	const runtime = await ModelRuntime.create({
 		allowModelNetwork: false,

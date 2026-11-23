@@ -1,7 +1,3 @@
-/**
- * The SDK end to end: a home on disk, one turn through the offline provider, and a transcript entry nobody had to
- * assemble by hand. No network, no key. The tools are installed, but the model never calls one.
- */
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -14,7 +10,6 @@ import { Config, DEFAULT_SOUL, Mason, renderPrompt } from "../src/index.ts";
 
 const home = () => mkdtemp(join(tmpdir(), "mason-sdk-"));
 
-/** The text of an entry's first model message, whatever kind wrote it. */
 function textOf(entry: EntryRecord): string {
 	const message = entry.model?.[0];
 	if (message === undefined || !Array.isArray(message.content)) return "";
@@ -33,10 +28,8 @@ test("a home answers one turn and stores it", async () => {
 		try {
 			assert.equal(mason.model.provider, "faux");
 			assert.equal(mason.modelIsFaux, true);
-
 			const settled = await mason.say("hello");
 			assert.equal(settled.status, "done", "the turn settled: a submission that ran to its end is done");
-
 			const entries = await mason.entries();
 			const kinds = entries.map((entry) => entry.kind);
 			assert.ok(kinds.includes("pi.user"), "the message is in the transcript");
@@ -50,7 +43,6 @@ test("a home answers one turn and stores it", async () => {
 		await rm(dir, { recursive: true, force: true });
 	}
 });
-
 test("a home with no model says which file to write", async () => {
 	const dir = await home();
 	const saved = { provider: process.env.MASON_PROVIDER, model: process.env.MASON_MODEL };
@@ -65,7 +57,6 @@ test("a home with no model says which file to write", async () => {
 		await rm(dir, { recursive: true, force: true });
 	}
 });
-
 test("a config made in code needs nothing on disk", async () => {
 	const dir = await home();
 	try {
@@ -86,7 +77,6 @@ test("a config made in code needs nothing on disk", async () => {
 		assert.match(config.prompt.workspace, new RegExp(config.device.cwd), "the workspace section names the cwd");
 		assert.match(renderPrompt(config.prompt), /^You are a bot made in code\./);
 		assert.ok(existsSync(config.device.cwd), "a local cwd exists before a tool runs in it");
-
 		const mason = await Mason.open(config);
 		try {
 			assert.equal((await mason.say("hi")).status, "done");
@@ -98,14 +88,12 @@ test("a config made in code needs nothing on disk", async () => {
 		await rm(dir, { recursive: true, force: true });
 	}
 });
-
 test("an edited soul lands on the stored agent at the next boot", async () => {
 	const dir = await home();
 	try {
 		const first = await Mason.open(await Config.load({ home: dir, faux: true }));
 		const id = first.root.id;
 		await first.close();
-
 		await writeFile(join(dir, "service", "soul.md"), "You are a different mason.\n");
 		const second = await Mason.open(await Config.load({ home: dir, faux: true }));
 		try {

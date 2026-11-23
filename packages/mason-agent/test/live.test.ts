@@ -1,9 +1,3 @@
-/**
- * One turn against a real server, off by default.
- *
- * The suite has to pass on a machine with no model, so this test exists only when `MASON_LIVE=1`. It talks to Ollama's
- * OpenAI-compatible door, which is the same shape any local server has.
- */
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,8 +6,8 @@ import { test } from "node:test";
 import { Config, Mason } from "../src/index.ts";
 
 const baseUrl = process.env.MASON_LIVE_URL ?? "http://127.0.0.1:11434/v1";
-const model = process.env.MASON_LIVE_MODEL ?? "bonsai-2:9b";
 
+const model = process.env.MASON_LIVE_MODEL ?? "bonsai-2:9b";
 test(
 	"a model behind an endpoint answers a turn",
 	{ skip: process.env.MASON_LIVE === "1" ? false : "set MASON_LIVE=1 to run against a real server" },

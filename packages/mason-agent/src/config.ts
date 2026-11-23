@@ -1,27 +1,3 @@
-/**
- * The config: a bot, described once.
- *
- * There are two ways to make one, and they differ in where the facts come from, not in what a config is.
- *
- * - `Config.load()` reads a home on disk: `service/settings.json`, `service/soul.md`, `agent/profile.md`.
- * - `Config.create()` takes every fact in code. It reads nothing, so nothing has to exist first.
- *
- * Either way the layout is the same, and `Mason` cannot tell the difference.
- *
- * ```text
- * <home>/
- * ├── agent/            # the agent owns it: mounted into the tool machine at this same absolute path
- * │   ├── profile.md    # who the person is, rewritten by the agent
- * │   └── workspace/    # where tools run
- * └── service/          # the caller owns it: no tool ever sees this directory
- *     ├── soul.md       # the first section of the system prompt
- *     ├── settings.json # { provider, model, thinking, device }
- *     └── data/         # agent.sqlite
- * ```
- *
- * A config holds its own text, so `prompt()` does no I/O: editing `soul.md` changes the file, and the next `load()`
- * reads it. `create()` does not write `soul.md` at all — a config made in code is not a home someone edits by hand.
- */
 import { existsSync, mkdirSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -30,53 +6,34 @@ import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { type SshTarget, sshTargetFromEnv } from "./env.ts";
 import { DEFAULT_SOUL, DELIVERY, TONE, type PromptSections, workspaceSection } from "./prompt.ts";
 
-/** Where tools run. `local` is this machine; `ssh` is a machine pi-env reaches with the key beside it. */
 export type ExecutionDevice =
 	| { readonly kind: "local"; readonly cwd: string }
 	| { readonly kind: "ssh"; readonly cwd: string; readonly ssh: SshTarget };
 
-/** Where the transcript lives. `memory` keeps it in RAM: a test, a demo, a throwaway run. */
 export type StorageKind = "sqlite" | "memory";
 
-/**
- * An OpenAI-compatible endpoint named in code: a local server, a gateway, anything that speaks
- * `/v1/chat/completions`. Mason writes it into its own `service/data/models.json` and points pi's catalog at that file,
- * so nothing here reads or writes pi's agent directory.
- */
 export interface Endpoint {
 	readonly baseUrl: string;
-	/** Sent as the bearer token. A local server ignores it; a gateway does not. */
 	readonly apiKey?: string;
-	/** The API family. Default `openai-completions`. */
 	readonly api?: string;
 }
 
-/** Everything a bot is, in code. Nothing is read from anywhere. */
 export interface ConfigInit {
-	/** The home the layout hangs below. Created when missing; it may be the only thing on disk. */
 	readonly home: string;
 	readonly provider?: string;
 	readonly model?: string;
 	readonly thinking?: ModelThinkingLevel;
-	/** The first section of the prompt. `DEFAULT_SOUL` when absent. */
 	readonly soul?: string;
-	/** Who the person is: the section after the soul. */
 	readonly profile?: string;
 	readonly device?: "local" | "ssh";
-	/** The directory tools run in. `<home>/agent/workspace` when absent. */
 	readonly cwd?: string;
-	/** The SSH target, when `device` is `"ssh"`. Absent, it is read from `PI_ENV_SSH_*`. */
 	readonly ssh?: SshTarget;
 	readonly storage?: StorageKind;
-	/** A server to reach instead of a catalogued provider: `http://127.0.0.1:11434/v1`. */
 	readonly endpoint?: Endpoint;
-	/** Plays the offline provider, for a test or a demo. */
 	readonly faux?: boolean;
 }
 
-/** The disk half: which home, and what overrides it. Every other field comes from the files. */
 export interface LoadInit {
-	/** `MASON_HOME`, or the home to serve. Default `~/.mason/default`. */
 	readonly home?: string;
 	readonly provider?: string;
 	readonly model?: string;
@@ -104,7 +61,6 @@ export class Config {
 	readonly soulPath: string;
 	readonly profilePath: string;
 	readonly settingsPath: string;
-
 	readonly provider?: string;
 	readonly model?: string;
 	readonly thinking: ModelThinkingLevel;
@@ -114,9 +70,7 @@ export class Config {
 	readonly soul: string;
 	readonly profile?: string;
 	readonly endpoint?: Endpoint;
-	/** Where mason writes the catalog for `endpoint`, and what pi's runtime is pointed at. */
 	readonly modelsPath: string;
-
 	private constructor(init: {
 		home: string;
 		provider?: string;
@@ -149,22 +103,14 @@ export class Config {
 		this.modelsPath = join(this.dataDir, "models.json");
 	}
 
-	/**
-	 * A config made in code. Synchronous and I/O-free past the directories the layout needs, so a caller can name every
-	 * fact: the model, the prompt, the device, the directory tools run in, and whether the transcript touches disk.
-	 */
 	static create(init: ConfigInit): Config {
 		const home = resolve(expandHome(init.home));
-		// The workspace is the device's default and it is the agent's half: a workspace in `service/` would give the tools
-		// the directory the soul lives in.
 		const workspaceDir = join(home, "agent", "workspace");
 		for (const dir of [join(workspaceDir, "out"), join(home, "service", "data")]) {
 			mkdirSync(dir, { recursive: true, mode: 0o700 });
 		}
 		const cwd = init.cwd === undefined ? workspaceDir : resolve(expandHome(init.cwd));
 		const kind = init.device ?? "local";
-		// A local cwd is this machine's, so it must exist before a tool runs in it. An ssh cwd is the remote's, and only
-		// the connection can tell whether it does.
 		if (kind === "local") mkdirSync(cwd, { recursive: true, mode: 0o700 });
 		const device: ExecutionDevice =
 			kind === "ssh"
@@ -184,7 +130,6 @@ export class Config {
 		});
 	}
 
-	/** Read a home once. Creates the layout, and `soul.md` when it is the only thing missing. */
 	static async load(init: LoadInit = {}): Promise<Config> {
 		const home = resolve(expandHome(init.home ?? process.env.MASON_HOME ?? join(homedir(), ".mason", "default")));
 		const settings = await readSettings(join(home, "service", "settings.json"));
@@ -192,7 +137,6 @@ export class Config {
 		await mkdir(join(home, "agent", "workspace", "out"), { recursive: true, mode: 0o700 });
 		await mkdir(join(home, "service", "data"), { recursive: true, mode: 0o700 });
 		if (!existsSync(soulPath)) await writeFile(soulPath, `${DEFAULT_SOUL}\n`, { mode: 0o600 });
-
 		return Config.create({
 			home,
 			provider: init.provider ?? settings.provider ?? process.env.MASON_PROVIDER,
@@ -207,10 +151,6 @@ export class Config {
 		});
 	}
 
-	/**
-	 * The system prompt as data: one key per section, the text of that section as the value. Computed from the config,
-	 * so a caller can read or replace one section without rebuilding the rest.
-	 */
 	get prompt(): PromptSections {
 		return {
 			soul: this.soul,
@@ -240,7 +180,6 @@ async function readOptional(path: string): Promise<string | undefined> {
 	return readFile(path, "utf8").catch(() => undefined);
 }
 
-/** A settings file that is absent is an empty settings file; one that is unreadable is a refusal, not a default. */
 async function readSettings(path: string): Promise<SettingsFile> {
 	const text = await readOptional(path);
 	if (text === undefined || text.trim() === "") return {};
