@@ -1,53 +1,45 @@
 # Contributing
 
-Thanks for helping improve Mason. Keep changes focused, explain the problem they solve, and include tests for behavior changes.
+Mason runs its TypeScript from source with `--experimental-strip-types`, and keeps its state in `node:sqlite`. There is
+no build step and no generated output.
 
-## Development setup
+## Setup
 
-Requirements: Node.js 26.4 or newer and npm. Mason runs its TypeScript from source and keeps its state in `node:sqlite`.
+Requirements: Node.js 26.4 or newer and npm.
 
 ```sh
 git clone https://github.com/Necto-AI/mason.git
 cd mason
-bash scripts/setup.sh
+npm ci
+nix develop        # optional: node, sqlite, git, ripgrep
 ```
 
-The setup script installs dependencies and builds the two workspace packages used by the runtime and tests.
-
-## Run and test
+## Run and check
 
 ```sh
-npm run dev
-npm test
-npm run e2e:first-run
-npm run test:packages
-npm run lint
+npm run mason -- "name three colors"   # one turn against ollama at 127.0.0.1:11434
+npm run check                          # offline: faux provider, temp home, memory storage
 npm run typecheck
+npm run lint
 ```
 
-Before opening a pull request, also run the generated-document and package checks when relevant:
+`npm run check` is the end-to-end proof that a turn completes; the compiler and the linter are the other two. All three
+run in CI on every pull request.
 
-```sh
-npm run gen:surface:check
-npm run check:docs
-npm run check:code
-npm run check:metadata
-npm run prove:connector
-npm run prove:package
-```
-
-CI runs the full validation set on pull requests. The corresponding commands and repository structure are described in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+`lint` names the musl Biome binary directly. `.npmrc` installs the musl build on purpose, and Biome's own launcher
+picks its build by reading `ldd --version`, which on NixOS reports glibc. So the launcher reaches for a binary the
+install did not fetch.
 
 ## Making a change
 
-1. Search [open issues](https://github.com/Necto-AI/mason/issues) before starting. For substantial work, open or discuss an issue first.
-2. Keep one pull request focused on one issue or closely related change.
-3. Add or update tests when behavior changes. Update documentation when user-facing behavior or a contract changes.
-4. Do not commit credentials, private data, local state, or generated build output.
-5. Describe what changed, why, and how you verified it in the pull request.
+Take a row from [FEATURES.md](FEATURES.md), not a folder. The loop is the same for every row:
 
-Use the terms in [GLOSSARY.md](GLOSSARY.md), follow the relevant decisions in [docs/adr/](docs/adr/), and keep changes within the scope of the issue.
+1. implement it in `src/mason.ts`, working, and run it;
+2. make it robust — failure modes, a second run, a crash mid-turn, and something that pins it;
+3. only then name the core and the inputs, move the core into a module under `src/`, and have the script adopt it in the
+   same commit.
 
-## Reporting a security problem
+A module the script does not call is a module with no working example. If nothing varies between uses, there is no
+module: the code stays in the script.
 
-Do not report exploitable vulnerabilities or credentials in a public issue. Use GitHub's private vulnerability reporting for this repository when available.
+Keep one pull request on one row. Describe what changed, why, and the command that showed it working.

@@ -27,11 +27,10 @@ export async function connectModels(endpoint: Endpoint, dataDir: string): Promis
 		...(endpoint.apiKey === undefined ? {} : { apiKey: endpoint.apiKey }),
 		models: [{ id: endpoint.modelId }],
 	};
-	await writeFile(
-		modelsPath,
-		`${JSON.stringify({ providers: { [endpoint.provider]: provider } }, null, 2)}\n`,
-		{ encoding: "utf8", mode: 0o600 },
-	);
+	await writeFile(modelsPath, `${JSON.stringify({ providers: { [endpoint.provider]: provider } }, null, 2)}\n`, {
+		encoding: "utf8",
+		mode: 0o600,
+	});
 	const models = await ModelRuntime.create({ allowModelNetwork: false, modelsPath, refreshOnCreate: false });
 	return { models, ref: { provider: endpoint.provider, modelId: endpoint.modelId } };
 }

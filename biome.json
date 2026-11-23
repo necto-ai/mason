@@ -6,14 +6,7 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"includes": [
-			"src/**",
-			"!vendor",
-			"!node_modules",
-			"!dist",
-			"!.data",
-			"!**/*.css"
-		]
+		"includes": ["src/**", "!vendor", "!node_modules", "!.worktrees", "!dist", "!.data", "!**/*.css"]
 	},
 	"formatter": {
 		"enabled": true,
