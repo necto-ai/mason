@@ -20,11 +20,11 @@
     npm install
   '';
 
-  scripts.test.exec = ''
-    npm test
+  scripts.check.exec = ''
+    npm run check
   '';
 
-  scripts.check.exec = ''
+  scripts.typecheck.exec = ''
     npm run typecheck
   '';
 

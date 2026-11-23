@@ -1,7 +1,7 @@
 {
 	"name": "mason",
 	"private": true,
-	"description": "An agent runtime: a pi-durable harness with a home behind it.",
+	"description": "One file that uses pi-durable directly",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/Necto-AI/mason.git"
@@ -9,12 +9,9 @@
 	"homepage": "https://github.com/Necto-AI/mason#readme",
 	"license": "AGPL-3.0-only",
 	"type": "module",
-	"workspaces": [
-		"packages/*"
-	],
 	"scripts": {
-		"demo": "node --experimental-strip-types src/demo.ts",
-		"test": "npm test --workspace mason-agent",
+		"mason": "node --experimental-strip-types src/mason.ts",
+		"check": "node --experimental-strip-types src/mason.ts --check",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check ."
 	},
@@ -25,5 +22,12 @@
 		"@biomejs/biome": "2.3.5",
 		"@types/node": "22.19.19",
 		"typescript": "5.9.3"
+	},
+	"dependencies": {
+		"@earendil-works/chord": "1.5.0",
+		"@earendil-works/pi-ai": "1.5.0",
+		"@earendil-works/pi-coding-agent": "1.5.0",
+		"@earendil-works/pi-durable": "1.5.0",
+		"@earendil-works/pi-env": "1.5.0"
 	}
 }
