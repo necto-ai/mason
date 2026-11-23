@@ -111,6 +111,10 @@ example.
 Step 3 is the only place a design decision happens. If nothing varies, there is no module yet: the code stays in the
 script, because a module with one caller and no varying input is a wrapper.
 
+## Next
+
+The first vertical beyond the script is issue #241: profile, skills and today's log in `agent/`, refreshed by a reviewer run that every compaction waits for.
+
 ## The hierarchy
 
 `Mason` above everything, `Config` as its only input, and `Config` composing the submodules. Names are placeholders until
