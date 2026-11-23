@@ -35,7 +35,7 @@ or anything that lives past one turn.
 |---|---|---|---|
 | Durable conversation | the transcript is the truth; a restart resumes from the log, not memory | `src/server/runtime.ts` | in script |
 | Execution split | model and harness here, file tools on the tool machine, `agent/` mounted only there | `src/server/env.ts` | part: local daemon, same host, no ssh |
-| System prompt | `section(key, render)` in reading order, rendered from the tool machine, byte-identical twice | `src/server/prompt.ts` | part: one string |
+| System prompt | `section(key, render)` in reading order, rendered from the tool machine, byte-identical twice | `src/server/prompt.ts` | part: `src/prompt.ts`, 4 of 11 sections |
 | Boot extensions | the base set installed at boot: delivery, skills, subagent, codemode, mcp | `src/server/runtime.ts` | part: `CodingTools` only |
 | Roles | two models, `main` and `subagent`, thinking level refused at boot when the catalog lacks it | `src/server/common.ts` | no: one model |
 | Turn limits | bytes on the socket and turns per sender, so a fire cannot spend without a bound | `src/server/limits.ts` | no |
@@ -51,10 +51,10 @@ or anything that lives past one turn.
 
 | Feature | What it does | On `main` | Now |
 |---|---|---|---|
-| Home layout | `agent/` (profile, log, skills, workspace) and `service/` (soul, settings, data, integrations) | `src/server/house.ts` | part: workspace and data |
+| Home layout | `agent/` (profile, log, skills, workspace) and `service/` (soul, settings, data, integrations) | `src/server/house.ts` | in script: `src/home.ts` |
 | Root and common store | `MASON_ROOT` with `common/` and one bot directory, one bot per environment | `src/server/root.ts`, `common.ts` | part: `MASON_HOME` only |
-| The agent's files are git | `agent/` is a repository, so a fact is a file the person can read and revert | `src/server/house.ts` | no |
-| Skills | `SKILL.md` directories, shipped and personal, indexed in the prompt by path only | `src/server/extensions/skills.ts` | no |
+| The agent's files are git | `agent/` is a repository, so a fact is a file the person can read and revert | `src/server/house.ts` | in script: `src/home.ts` |
+| Skills | `SKILL.md` directories, shipped and personal, indexed in the prompt by path only | `src/server/extensions/skills.ts` | no: the directory exists |
 | Resident reads | read `agent/` through the execution environment, not `node:fs`, so the prompt shows the bytes the agent wrote | `src/server/resident.ts` | no |
 | First run and day-2 | `init` (one real completion before writing), `new`, `status` | `scripts/init.ts`, `new.ts`, `status.ts` | no |
 | Doctor | read-only checks over the home, one repair command per failure | `src/server/doctor.ts` | no |

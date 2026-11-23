@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -18,10 +18,8 @@ import {
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { Connection, localDaemon, RemoteExecutionEnv } from "@earendil-works/pi-env";
-
-const SOUL = `You are mason: an assistant that runs continuously on one machine and works for one person.
-Write as a colleague would message them: plain sentences, your own voice. What you write after your last action is the
-message they read, so write the answer itself.`;
+import { ensureHome, home } from "./home.ts";
+import { DEFAULT_SOUL, promptExtension } from "./prompt.ts";
 
 const MODEL = { provider: "ollama", modelId: "bonsai-2:9b" };
 const ENDPOINT = "http://127.0.0.1:11434/v1";
@@ -37,16 +35,20 @@ async function openModels(dataDir: string, faux: boolean) {
 	const modelsPath = join(dataDir, "models.json");
 	await writeFile(
 		modelsPath,
-		`${JSON.stringify({
-			providers: {
-				[MODEL.provider]: {
-					api: "openai-completions",
-					apiKey: "local",
-					baseUrl: ENDPOINT,
-					models: [{ id: MODEL.modelId }],
+		`${JSON.stringify(
+			{
+				providers: {
+					[MODEL.provider]: {
+						api: "openai-completions",
+						apiKey: "local",
+						baseUrl: ENDPOINT,
+						models: [{ id: MODEL.modelId }],
+					},
 				},
 			},
-		}, null, 2)}\n`,
+			null,
+			2,
+		)}\n`,
 	);
 	const runtime = await ModelRuntime.create({ allowModelNetwork: false, modelsPath, refreshOnCreate: false });
 	return { models: runtime, ref: MODEL };
@@ -70,18 +72,18 @@ async function open(options: { home: string; memory?: boolean; faux?: boolean })
 	root: Conversation;
 	close: () => Promise<void>;
 }> {
-	const dataDir = join(options.home, "service", "data");
-	const workspaceDir = join(options.home, "agent", "workspace");
-	const instructions = `${SOUL}\n\nYour working directory is \`${workspaceDir}\`.`;
-	await mkdir(join(workspaceDir, "out"), { recursive: true, mode: 0o700 });
-	await mkdir(dataDir, { recursive: true, mode: 0o700 });
+	const paths = home(options.home);
+	await ensureHome(paths, DEFAULT_SOUL);
 
-	const { models, ref } = await openModels(dataDir, options.faux === true);
+	const { models, ref } = await openModels(paths.dataDir, options.faux === true);
 	const registry = createRegistry();
 	registry.install(CodingTools);
-	const device = openDevice(workspaceDir);
+	registry.install(promptExtension(paths));
+	const device = openDevice(paths.workspaceDir);
 	const storage =
-		options.memory === true ? new MemoryStorage() : await openNodeSqliteStorage(join(dataDir, "agent.sqlite"));
+		options.memory === true
+			? new MemoryStorage()
+			: await openNodeSqliteStorage(join(paths.dataDir, "agent.sqlite"));
 
 	const harness = await Harness.open(
 		storage,
@@ -97,14 +99,14 @@ async function open(options: { home: string; memory?: boolean; faux?: boolean })
 		BACKGROUND_CONTEXT,
 	);
 
-	const root = await harness.root(BACKGROUND_CONTEXT, { agent: { model: ref, cwd: workspaceDir, instructions } });
+	const root = await harness.root(BACKGROUND_CONTEXT, { agent: { model: ref, cwd: paths.workspaceDir } });
 	const stored = await harness.snapshot(AgentDoc, root.id, BACKGROUND_CONTEXT);
 	if (
-		stored?.instructions !== instructions ||
+		stored?.instructions != null ||
 		stored?.model?.provider !== ref.provider ||
 		stored?.model?.modelId !== ref.modelId
 	) {
-		await root.commit((tx) => configure(tx, root.id, { instructions, model: ref }), BACKGROUND_CONTEXT);
+		await root.commit((tx) => configure(tx, root.id, { instructions: null, model: ref }), BACKGROUND_CONTEXT);
 	}
 	harness.resume();
 
@@ -124,14 +126,9 @@ function read(entry: EntryRecord): string {
 }
 
 async function main(prompt: string | undefined, check: boolean): Promise<void> {
-	const home = check
-		? await mkdtemp(join(tmpdir(), "mason-check-"))
-		: (process.env.MASON_HOME ?? join(homedir(), ".mason", "one-off"));
-	const { root, close } = await open({
-		home,
-		memory: check,
-		faux: check || process.env.MASON_FAUX === "1",
-	});
+	const scratch = check === true ? await mkdtemp(join(tmpdir(), "mason-check-")) : undefined;
+	const home = scratch ?? process.env.MASON_HOME ?? join(homedir(), ".mason", "one-off");
+	const { root, close } = await open({ home, memory: check, faux: check || process.env.MASON_FAUX === "1" });
 	try {
 		const submission = await root.submit(
 			{ type: "input", content: prompt ?? "hello, who are you?" },
@@ -150,6 +147,7 @@ async function main(prompt: string | undefined, check: boolean): Promise<void> {
 		}
 	} finally {
 		await close();
+		if (scratch !== undefined) await rm(scratch, { recursive: true, force: true });
 	}
 }
 
