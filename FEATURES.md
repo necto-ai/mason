@@ -34,7 +34,7 @@ or anything that lives past one turn.
 | Feature | What it does | On `main` | Now |
 |---|---|---|---|
 | Durable conversation | the transcript is the truth; a restart resumes from the log, not memory | `src/server/runtime.ts` | in script |
-| Execution split | model and harness here, file tools on the tool machine, `agent/` mounted only there | `src/server/env.ts` | part: local daemon, same host, no ssh |
+| Execution split | model and harness here, file tools on the tool machine, `agent/` mounted only there | `src/server/env.ts` | part: local daemon, same host, nothing mounted |
 | System prompt | `section(key, render)` in reading order, rendered from the tool machine, byte-identical twice | `src/server/prompt.ts` | part: `src/prompt.ts`, 4 of 11 sections |
 | Boot extensions | the base set installed at boot: delivery, skills, subagent, codemode, mcp | `src/server/runtime.ts` | part: `CodingTools` only |
 | Roles | two models, `main` and `subagent`, thinking level refused at boot when the catalog lacks it | `src/server/common.ts` | no: one model |
@@ -53,7 +53,7 @@ or anything that lives past one turn.
 |---|---|---|---|
 | Home layout | `agent/` (profile, log, skills, workspace) and `service/` (soul, settings, data, integrations) | `src/server/house.ts` | in script: `src/home.ts` |
 | Root and common store | `MASON_ROOT` with `common/` and one bot directory, one bot per environment | `src/server/root.ts`, `common.ts` | part: `MASON_HOME` only |
-| The agent's files are git | `agent/` is a repository, so a fact is a file the person can read and revert | `src/server/house.ts` | in script: `src/home.ts` |
+| The agent's files are git | `agent/` is a repository, so a fact is a file the person can read and revert | `src/server/house.ts` | no: not while the home is unmounted |
 | Skills | `SKILL.md` directories, shipped and personal, indexed in the prompt by path only | `src/server/extensions/skills.ts` | no: the directory exists |
 | Resident reads | read `agent/` through the execution environment, not `node:fs`, so the prompt shows the bytes the agent wrote | `src/server/resident.ts` | no |
 | First run and day-2 | `init` (one real completion before writing), `new`, `status` | `scripts/init.ts`, `new.ts`, `status.ts` | no |
