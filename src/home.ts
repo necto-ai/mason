@@ -11,7 +11,6 @@ export interface Home {
 	readonly logDir: string;
 	readonly skillsDir: string;
 	readonly workspaceDir: string;
-	readonly events: string;
 	readonly dataDir: string;
 }
 
@@ -27,7 +26,6 @@ export function home(path: string): Home {
 		logDir: join(agentDir, "log"),
 		skillsDir: join(agentDir, "skills"),
 		workspaceDir: join(agentDir, "workspace"),
-		events: join(agentDir, "events.json"),
 		dataDir: join(serviceDir, "data"),
 	};
 }
