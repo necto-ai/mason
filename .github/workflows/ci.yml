@@ -1,15 +1,7 @@
 name: ci
 
-# The compiler and the suite, on every push to main and every pull request. Before this file existed, `main` carried a
-# type error in a test and nothing noticed: the suite runs with `--experimental-strip-types`, which erases types without
-# reading them, and `tsc` was not a dependency of the project at all.
-#
-# Five jobs rather than one, because the suite is the long pole and the rest of the checks do not read its output. The
-# numbers are this runner's, measured on one commit. Node's default with two cores is one test file at a time
-# (`availableParallelism() - 1`) and the suite took 135 seconds that way. Two at a time took 66 to 118 depending on the
-# run, three took 76 to 89 and four took 115 to 140: past two, the contention costs more than the overlap wins. Two
-# shards at two files each took 47 to 64, which is why the suite is two jobs and not one: on a runner this noisy, half
-# the work twice beats all of it once, and the shards come out even.
+# Two checks, because two things are left: the compiler and the suite. Node runs the suite with
+# `--experimental-strip-types`, which erases types without reading them, so `tsc` is a separate job's worth of finding.
 on:
   push:
     branches: [main]
@@ -20,125 +12,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The static half: everything that reads the tree and writes nothing. No test file is imported here, so a failure names
-  # the document, the ceiling or the manifest that is wrong.
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '26.4'
-          # The lockfile key, so a repeat run does not spend its first ten seconds fetching what the last one installed.
           cache: npm
-
-      # The same recipe a fresh clone runs (`devenv shell -- setup`): the root install, then the two packages the tests
-      # and the runtime import from `dist`. No submodule and no Rust: `@earendil-works/*` are ordinary dependencies and
-      # the `pi-env` daemon ships inside its package.
-      - run: bash scripts/setup.sh
-
-      - run: npm run lint
+      - run: npm ci
       - run: npm run typecheck
-      # `docs/SURFACE.md` is rendered from the servers (`scripts/surface.ts`): the doors and what opens each, the
-      # extensions a boot installs, and the budgets. A route added without a door fails here, by name, instead of
-      # shipping as an endpoint nothing opens.
-      - run: npm run gen:surface:check
-      # One ceiling per document (`docs/doc-budgets.json`, `docs/AGENTS.md`). A document that grew past its number fails
-      # the pull request that grew it, and a ceiling only ever goes down.
-      - run: npm run check:docs
-      # The same ratchet for code (`docs/code-budgets.json`): one ceiling per area, and it only ever goes down. A cut
-      # that shrinks an area is expected to lower its number in the same commit.
-      - run: npm run check:code
-      # The manifests, the README, LICENSE and NOTICE are four places the terms are read from, and they were edited at
-      # different times: NOTICE claimed Apache-2.0 for the published packages while everything else said AGPL-3.0.
-      - run: npm run check:licence
-      # The manifests against the tree they describe: the npm page's fields, every `files` entry, `prepack` on both
-      # packages, each declared Node floor against its dependencies', and no maintainer's home path in a file a stranger
-      # reads. No build needed: the `dist` entries are the ones `prepack` writes, and `prove:package` proves they arrive.
-      - run: npm run check:metadata
-
-  # The suite, on its own jobs so it is one number on the pull request. `test:ci` is `npm test` with two files at a
-  # time; `TEST_SHARD` splits the file list, and node's sharding runs every file exactly once across the shards, so a
-  # file added to `test/` needs no list updated here. `fail-fast: false`, because a red shard says nothing about the
-  # other one and a reader wants both.
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: ["1/2", "2/2"]
-    env:
-      TEST_SHARD: ${{ matrix.shard }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '26.4'
-          cache: npm
-      - run: bash scripts/setup.sh
-      - run: npm run test:ci
-
-  # The artifact the release publishes, built where a green test does not hide it. `dist` is what the tarball ships, and
-  # the deployment reference is the one copy whose absence is silent: `readDocsIndex` reads a missing directory as no
-  # pages, so the prompt loses its `docs` section and nothing fails.
-  artifact:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '26.4'
-          cache: npm
-      - run: bash scripts/setup.sh
-      - run: npm run build
-      - run: test -f dist/docs/agent/README.md
-      - run: npm run test:packages
-      # The tarball as a stranger installs it: packed, unpacked outside the tree, and driven there — `init` from its flags,
-      # `new`, a doctor, and the prompt's `docs` section, which a missing copy used to empty without failing anything.
-      - run: npm run prove:package
-      # The packed artifact, installed into an empty project outside the tree: an SDK that only runs from source is not
-      # an SDK, and this is the only check that says so.
-      - run: npm run prove:connector
-
-  # The first run as a person walks it: a scratch root, `bin/mason.ts` as separate processes, flags-only `init` (then
-  # again, for the asking-nothing half), `new`, one bot, `mason up` in its own process, and one turn a Chord client
-  # answers over the console socket on that bot's home, against a server this script opens because no environment
-  # variable scripts the faux provider. `test/mason-bin.test.ts` spawns the CLI too, but only for the short-lived
-  # commands, and `test/chat.test.ts` opens its server in-process: no test starts `mason up` as a process and checks the
-  # bot it serves, and the assertion that the run left no home halves at the root it made and wrote no `~/.mason` under
-  # its scratch HOME lives only in this script.
-  e2e:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '26.4'
-          cache: npm
-      - run: bash scripts/setup.sh
-      - run: npm run e2e:first-run
-        timeout-minutes: 5
-
-  # The flake, because it is a second way to install mason and nothing else would notice it rot. `buildNpmPackage`
-  # reruns the npm dependency cache and the build from scratch here — 3 minutes of work — which is the price of a second
-  # artifact that a stranger is told to trust with `nix run`.
-  nix:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v31
-      - run: nix build .#mason --print-build-logs
-      # No arguments is usage, and usage is exit 1: the packaged command dispatches, and a wrapper that cannot find
-      # `dist/` would fail some other way and say so in its own words. `init` is the first run and `chat` the developer
-      # adapter, so a tarball missing either is a release missing a command.
-      - name: the packaged command is the one npm installs
-        run: |
-          out=$(./result/bin/mason 2>&1 || true)
-          echo "$out" | grep -q "mason init"
-          echo "$out" | grep -q "mason chat"
+      - run: npm run lint
+      - run: npm test
