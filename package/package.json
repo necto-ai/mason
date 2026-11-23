@@ -1,0 +1,11 @@
+{
+	"name": "mason",
+	"version": "0.0.0",
+	"private": true,
+	"description": "A simple interface over pi-durable for creating agents",
+	"type": "module",
+	"exports": {
+		".": "./index.ts"
+	},
+	"license": "AGPL-3.0-only"
+}

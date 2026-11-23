@@ -1,7 +1,7 @@
 {
 	"name": "mason",
 	"private": true,
-	"description": "One file that uses pi-durable directly",
+	"description": "A simple interface over pi-durable for creating agents",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/Necto-AI/mason.git"
@@ -10,8 +10,9 @@
 	"license": "AGPL-3.0-only",
 	"type": "module",
 	"scripts": {
-		"mason": "node --experimental-strip-types src/mason.ts",
-		"check": "node --experimental-strip-types src/mason.ts --check",
+		"tui": "node --experimental-strip-types examples/tui/main.ts",
+		"check": "node --experimental-strip-types scripts/check.ts",
+		"test": "node --experimental-strip-types --test \"package/test/*.test.ts\"",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "BIOME_BINARY=\"$PWD/node_modules/@biomejs/cli-linux-x64-musl/biome\" biome check ."
 	},
@@ -28,6 +29,7 @@
 		"@earendil-works/pi-ai": "1.5.0",
 		"@earendil-works/pi-coding-agent": "1.5.0",
 		"@earendil-works/pi-durable": "1.5.0",
-		"@earendil-works/pi-env": "1.5.0"
+		"@earendil-works/pi-env": "1.5.0",
+		"@earendil-works/pi-tui": "1.5.0"
 	}
 }

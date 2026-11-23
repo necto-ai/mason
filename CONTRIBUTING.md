@@ -17,29 +17,44 @@ nix develop        # optional: node, sqlite, git, ripgrep
 ## Run and check
 
 ```sh
-npm run mason -- "name three colors"   # one turn against ollama at 127.0.0.1:11434
-npm run check                          # offline: faux provider, temp home, memory storage
+npm run tui       # a complete agent with a terminal in front of it
+npm run check     # offline: faux model, temp home, one turn
+npm test          # the package, on node:test
 npm run typecheck
 npm run lint
 ```
 
-`npm run check` is the end-to-end proof that a turn completes; the compiler and the linter are the other two. All three
-run in CI on every pull request.
+`tui` is the interactive surface: it talks to whatever `MASON_HOME` names, default `~/.mason/tui`, and answers through
+ollama at `127.0.0.1:11434` unless a model is passed. `check` is the offline end-to-end proof that a turn completes; the
+suite, the compiler and the linter are the other three, and CI runs all of them on every pull request.
 
-`lint` names the musl Biome binary directly. `.npmrc` installs the musl build on purpose, and Biome's own launcher
-picks its build by reading `ldd --version`, which on NixOS reports glibc. So the launcher reaches for a binary the
-install did not fetch.
+`lint` names the musl Biome binary directly. `.npmrc` installs the musl build on purpose, and Biome's own launcher picks
+its build by reading `ldd --version`, which on NixOS reports glibc. So the launcher reaches for a binary the install did
+not fetch.
+
+## The shape
+
+```text
+package/     the interface: createAgent, one conversation, one turn, one watch
+src/         what the interface is made of
+examples/    complete agents; the TUI is the main one
+scripts/     the offline check and other operator commands
+```
+
+Two budgets hold the shape: `src/` and `package/` together stay at or under 1,000 lines, and every example at or under
+100. The example is the proof that the interface is simple: if a complete agent needs more than a hundred lines, the
+change belongs in the package.
 
 ## Making a change
 
-Take a row from [FEATURES.md](FEATURES.md), not a folder. The loop is the same for every row:
+Take a row from [FEATURES.md](FEATURES.md).
 
-1. implement it in `src/mason.ts`, working, and run it;
+1. implement it in `examples/tui/main.ts`, working, and run it;
 2. make it robust — failure modes, a second run, a crash mid-turn, and something that pins it;
-3. only then name the core and the inputs, move the core into a module under `src/`, and have the script adopt it in the
+3. only then name the core and the inputs, move the core into `package/` or `src/`, and have the example adopt it in the
    same commit.
 
-A module the script does not call is a module with no working example. If nothing varies between uses, there is no
-module: the code stays in the script.
+An example that does not use a module is a module with no working example. If nothing varies between uses, there is no
+module: the code stays in the example.
 
 Keep one pull request on one row. Describe what changed, why, and the command that showed it working.

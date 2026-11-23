@@ -14,6 +14,14 @@ export interface Endpoint {
 	readonly apiKey?: string;
 }
 
+export const DEFAULT_ENDPOINT: Endpoint = {
+	provider: "ollama",
+	modelId: "bonsai-2:9b",
+	api: "openai-completions",
+	baseUrl: "http://127.0.0.1:11434/v1",
+	apiKey: "local",
+};
+
 export interface ChatModels {
 	readonly models: Models;
 	readonly ref: ModelRef;

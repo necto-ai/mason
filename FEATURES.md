@@ -3,13 +3,14 @@
 What mason did on `main`, and where the rebuild stands. One row per feature, grouped by the part of the system that
 owns it. The status column is the only thing that changes as we go.
 
-- **in script**: `src/mason.ts` does it today
-- **part**: the script does a slice of it, the rest is missing
-- **no**: not in the script yet
+- **in example**: `examples/tui/main.ts` does it today, through `package/index.ts`
+- **part**: the example does a slice of it, the rest is missing
+- **no**: not in the example yet
 
-## The script today
+## Where it stands
 
-`src/mason.ts`, 205 lines, one process, one turn, one conversation. It imports the pi packages and nothing of ours.
+`package/index.ts`, 119 lines, is the interface: one agent, one conversation, one turn. `examples/tui/main.ts`, 70 lines,
+is a complete agent with a terminal in front of it, and imports the package and nothing of `src/`.
 
 | It does | With |
 |---|---|
@@ -33,7 +34,7 @@ or anything that lives past one turn.
 
 | Feature | What it does | On `main` | Now |
 |---|---|---|---|
-| Durable conversation | the transcript is the truth; a restart resumes from the log, not memory | `src/server/runtime.ts` | in script |
+| Durable conversation | the transcript is the truth; a restart resumes from the log, not memory | `src/server/runtime.ts` | in example |
 | Execution split | model and harness here, file tools on the tool machine, `agent/` mounted only there | `src/server/env.ts` | part: `src/device.ts`, local daemon, same host, nothing mounted |
 | Providers and keys | the catalog mason writes (provider, endpoint, models) and the credential each provider is called with | `src/server/provider.ts`, `runtime.ts` | part: `src/models.ts`, key is a constant |
 | System prompt | `section(key, render)` in reading order, rendered from the tool machine, byte-identical twice | `src/server/prompt.ts` | part: `src/prompt.ts`, 4 of 11 sections |
@@ -52,7 +53,7 @@ or anything that lives past one turn.
 
 | Feature | What it does | On `main` | Now |
 |---|---|---|---|
-| Home layout | `agent/` (profile, log, skills, workspace) and `service/` (soul, settings, data, integrations) | `src/server/house.ts` | in script: `src/home.ts` |
+| Home layout | `agent/` (profile, log, skills, workspace) and `service/` (soul, settings, data, integrations) | `src/server/house.ts` | in example: `src/home.ts` |
 | Root and common store | `MASON_ROOT` with `common/` and one bot directory, one bot per environment | `src/server/root.ts`, `common.ts` | part: `MASON_HOME` only |
 | The agent's files are git | `agent/` is a repository, so a fact is a file the person can read and revert | `src/server/house.ts` | no: not while the home is unmounted |
 | Skills | `SKILL.md` directories, shipped and personal, indexed in the prompt by path only | `src/server/extensions/skills.ts` | no: the directory exists |
@@ -96,24 +97,26 @@ or anything that lives past one turn.
 
 ## The loop
 
-One feature at a time, in this order, and the script stays runnable after every step:
+One feature at a time, in this order, and the example stays runnable after every step:
 
 0. take the next row from this file
-1. implement it in `src/mason.ts`, working, run it
+1. implement it in `examples/tui/main.ts`, working, run it
 2. name the core: the part of that feature that never varies between uses
 3. name the inputs: what does vary, and therefore belongs in the interface
-4. move the core into a module, and have `src/mason.ts` adopt it in the same commit; tick the row
+4. move the core into `package/` or `src/`, and have the example adopt it through the package in the same commit; tick
+   the row
 
-The script is the demonstration, not a legacy caller: it is rewritten at every step to use the newest module, so reading
-`src/mason.ts` shows the whole system as it stands. A module the script does not call yet is a module with no working
-example.
+The example is the demonstration, not a legacy caller: it is rewritten at every step to use the newest module, so reading
+`examples/tui/main.ts` shows the whole system as it stands, and the recipe stays under 100 lines or the interface is not
+simple enough. A module the example does not call yet is a module with no working example.
 
 Step 3 is the only place a design decision happens. If nothing varies, there is no module yet: the code stays in the
-script, because a module with one caller and no varying input is a wrapper.
+example, because a module with one caller and no varying input is a wrapper.
 
 ## Next
 
-The first vertical beyond the script is issue #241: profile, skills and today's log in `agent/`, refreshed by a reviewer run that every compaction waits for.
+The next four are the memory split: #242 the files and the prompt section, #243 the tools and the fence, #244 the
+reviewer on every compaction, #245 a minimal subagent.
 
 ## The hierarchy
 
