@@ -101,7 +101,11 @@ One feature at a time, in this order, and the script stays runnable after every 
 1. implement it in `src/mason.ts`, working, run it
 2. name the core: the part of that feature that never varies between uses
 3. name the inputs: what does vary, and therefore belongs in the interface
-4. move the core into a module, keep the script calling it; tick the row
+4. move the core into a module, and have `src/mason.ts` adopt it in the same commit; tick the row
+
+The script is the demonstration, not a legacy caller: it is rewritten at every step to use the newest module, so reading
+`src/mason.ts` shows the whole system as it stands. A module the script does not call yet is a module with no working
+example.
 
 Step 3 is the only place a design decision happens. If nothing varies, there is no module yet: the code stays in the
 script, because a module with one caller and no varying input is a wrapper.
