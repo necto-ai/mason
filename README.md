@@ -54,6 +54,7 @@ variables, because a tool call is arbitrary code in the agent's shell.
 ## Commands
 
 ```bash
-npm test        # one turn through the offline provider, and two error paths
+npm test            # one turn through the offline provider, and two error paths
 npm run typecheck
+nix develop         # the same node, sqlite and search tools the suite expects
 ```

@@ -17,15 +17,15 @@
   ];
 
   scripts.setup.exec = ''
-    bash scripts/setup.sh
+    npm install
   '';
 
-  scripts.dev.exec = ''
-    node --experimental-strip-types src/server/main.ts
+  scripts.test.exec = ''
+    npm test
   '';
 
-  scripts.test-all.exec = ''
-    node --experimental-strip-types --test test/*.test.ts
+  scripts.check.exec = ''
+    npm run typecheck
   '';
 
   enterShell = ''
