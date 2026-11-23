@@ -51,7 +51,7 @@ or anything that lives past one turn.
 
 | Feature | What it does | On `main` | Now |
 |---|---|---|---|
-| Home layout | `agent/` (profile, log, skills, workspace) and `service/` (soul, settings, data, integrations) | `src/server/house.ts` | in script: `src/home.ts` |
+| Home layout | `agent/` (log, skills, workspace) and `service/` (soul, profile, settings, data, integrations) | `src/server/house.ts` | in script: `src/home.ts`, profile in `service/` |
 | Root and common store | `MASON_ROOT` with `common/` and one bot directory, one bot per environment | `src/server/root.ts`, `common.ts` | part: `MASON_HOME` only |
 | The agent's files are git | `agent/` is a repository, so a fact is a file the person can read and revert | `src/server/house.ts` | no: not while the home is unmounted |
 | Skills | `SKILL.md` directories, shipped and personal, indexed in the prompt by path only | `src/server/extensions/skills.ts` | no: the directory exists |
