@@ -17,7 +17,7 @@ const config = Config.create({
   ...(faux
     ? {}
     : { endpoint: { baseUrl: "http://127.0.0.1:11434/v1", apiKey: "ollama" } }),
-  thinking: "off",
+  thinking: "high",
   device: "local",
   cwd: join(home, "work"),
   storage: "memory",
@@ -32,6 +32,7 @@ try {
   );
   console.log(`store: ${config.storage}`);
   console.log(`prompt: ${Object.values(config.prompt).join("\n\n")}`);
+  console.log(`prompt: ${Object.keys(config.prompt).join(", ")}`);
   let seen = 0;
   const stop = await mason.watch(() => {});
   const progress = setInterval(async () => {
@@ -42,7 +43,7 @@ try {
     }
   }, 250);
   const started = Date.now();
-  const settled = await mason.say("waht does wabalabadubdub mean?", {
+  const settled = await mason.say("what is inside /home/denis/something.txt", {
     timeoutMs: 120_000,
   });
   clearInterval(progress);

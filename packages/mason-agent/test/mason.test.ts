@@ -71,7 +71,7 @@ test("a config made in code needs nothing on disk", async () => {
 			storage: "memory",
 		});
 		assert.equal(config.soul, "You are a bot made in code.", "the soul is the string given, not a file read");
-		assert.deepEqual(Object.keys(config.prompt), ["soul", "profile", "tone", "workspace", "delivery"]);
+		assert.deepEqual(Object.keys(config.prompt), ["soul", "profile", "tone", "workspace"]);
 		assert.equal(config.prompt.soul, "You are a bot made in code.");
 		assert.equal(config.prompt.profile, "Someone testing that no home has to exist first.");
 		assert.match(config.prompt.workspace, new RegExp(config.device.cwd), "the workspace section names the cwd");
@@ -88,6 +88,31 @@ test("a config made in code needs nothing on disk", async () => {
 		await rm(dir, { recursive: true, force: true });
 	}
 });
+test("a section is one entry in one list", async () => {
+	const dir = await home();
+	try {
+		const custom = Config.create({
+			home: join(dir, "custom"),
+			faux: true,
+			storage: "memory",
+			sections: [{ key: "only", text: "Just this." }],
+		});
+		assert.deepEqual(Object.keys(custom.prompt), ["soul", "only"]);
+		assert.equal(renderPrompt(custom.prompt), `${custom.soul}\n\nJust this.`);
+
+		const bare = Config.create({
+			home: join(dir, "bare"),
+			faux: true,
+			storage: "memory",
+			sections: [],
+		});
+		assert.deepEqual(Object.keys(bare.prompt), ["soul"]);
+		assert.equal(renderPrompt(bare.prompt), bare.soul);
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
+
 test("an edited soul lands on the stored agent at the next boot", async () => {
 	const dir = await home();
 	try {
