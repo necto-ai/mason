@@ -20,6 +20,21 @@ try {
 }
 ```
 
+## Layout
+
+```text
+src/                        your scripts, run with `node --experimental-strip-types`
+packages/mason-agent/       the SDK, an npm workspace package named `mason-agent`
+```
+
+`npm install` links the workspace into the root `node_modules`, so a script in `src/` imports it by name:
+
+```ts
+import { Config, Mason } from "mason-agent";
+```
+
+`npm run demo` is that script: it opens `~/.mason/demo` with the offline provider, says hello and lists the transcript.
+
 ## The home
 
 `Config.load()` reads it, creating what is missing:
@@ -54,6 +69,7 @@ variables, because a tool call is arbitrary code in the agent's shell.
 ## Commands
 
 ```bash
+npm run demo        # a script in src/ using the package
 npm test            # one turn through the offline provider, and two error paths
 npm run typecheck
 nix develop         # the same node, sqlite and search tools the suite expects
