@@ -1,4 +1,8 @@
-import { defineExtension, type PromptSection, section } from "@earendil-works/pi-durable";
+import {
+  defineExtension,
+  type PromptSection,
+  section,
+} from "@earendil-works/pi-durable";
 import { type Home, readHouseFile } from "./home.ts";
 
 export const DEFAULT_SOUL = `You are mason: an assistant that runs continuously on one machine and works for one person.`;
@@ -11,18 +15,22 @@ export const TONE = `Write as a colleague would message them: plain sentences, y
 - Say you did not check it, in the sentence that gives the claim.`;
 
 export function promptSections(paths: Home): readonly PromptSection[] {
-	return [
-		section("soul", async () => (await readHouseFile(paths.soul)) ?? DEFAULT_SOUL, { tag: false }),
-		section("tone", () => TONE),
-		section("cwd", (input) => input.env?.cwd),
-		section("profile", () => readHouseFile(paths.profile)),
-	];
+  return [
+    section(
+      "soul",
+      async () => (await readHouseFile(paths.soul)) ?? DEFAULT_SOUL,
+      { tag: false },
+    ),
+    section("tone", () => TONE),
+    section("cwd", (input) => input.env?.cwd),
+    section("profile", () => readHouseFile(paths.profile)),
+  ];
 }
 
 export function promptExtension(paths: Home) {
-	return defineExtension({ name: "prompt", sections: promptSections(paths) });
+  return defineExtension({ name: "prompt", sections: promptSections(paths) });
 }
 
 export function promptSectionKeys(paths: Home): string[] {
-	return promptSections(paths).map((promptSection) => promptSection.key);
+  return promptSections(paths).map((promptSection) => promptSection.key);
 }
