@@ -7,6 +7,8 @@ export interface Home {
 	readonly agentDir: string;
 	readonly serviceDir: string;
 	readonly soul: string;
+	readonly settings: string;
+	readonly auth: string;
 	readonly profile: string;
 	readonly logDir: string;
 	readonly skillsDir: string;
@@ -22,6 +24,8 @@ export function home(path: string): Home {
 		agentDir,
 		serviceDir,
 		soul: join(serviceDir, "soul.md"),
+		settings: join(serviceDir, "settings.json"),
+		auth: join(serviceDir, "auth.json"),
 		profile: join(agentDir, "profile.md"),
 		logDir: join(agentDir, "log"),
 		skillsDir: join(agentDir, "skills"),

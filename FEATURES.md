@@ -36,7 +36,7 @@ or anything that lives past one turn.
 |---|---|---|---|
 | Durable conversation | the transcript is the truth; a restart resumes from the log, not memory | `src/server/runtime.ts` | in example |
 | Execution split | model and harness here, file tools on the tool machine, `agent/` mounted only there | `src/server/env.ts` | part: `src/device.ts`, local daemon, same host, nothing mounted |
-| Providers and keys | the catalog mason writes (provider, endpoint, models) and the credential each provider is called with | `src/server/provider.ts`, `runtime.ts` | part: `src/models.ts`, key is a constant |
+| Providers and keys | the catalog mason writes (provider, endpoint, models) and the credential each provider is called with | `src/server/provider.ts`, `runtime.ts` | part: `src/settings.ts`, `src/auth.ts`, pi's `auth.json` |
 | System prompt | `section(key, render)` in reading order, rendered from the tool machine, byte-identical twice | `src/server/prompt.ts` | part: `src/prompt.ts`, 4 of 11 sections |
 | Boot extensions | the base set installed at boot: delivery, skills, subagent, codemode, mcp | `src/server/runtime.ts` | part: `CodingTools` only |
 | Roles | two models, `main` and `subagent`, thinking level refused at boot when the catalog lacks it | `src/server/common.ts` | no: one model |

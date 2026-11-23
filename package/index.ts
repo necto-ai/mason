@@ -20,8 +20,9 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { localDevice } from "../src/device.ts";
 import { ensureHome, home as homePaths } from "../src/home.ts";
-import { connectModels, DEFAULT_ENDPOINT, type Endpoint, fauxModels } from "../src/models.ts";
+import { connectModels, ensureCatalog, fauxModels } from "../src/models.ts";
 import { DEFAULT_SOUL, promptExtension } from "../src/prompt.ts";
+import { readSettings, type Settings } from "../src/settings.ts";
 
 export type { Context } from "@earendil-works/chord/context";
 export type {
@@ -41,8 +42,6 @@ export interface AgentOptions {
 	readonly name?: string;
 	/** The words the agent is given instead of a person's file. */
 	readonly soul?: string;
-	/** Where the model is. Defaults to the local ollama endpoint. */
-	readonly model?: Endpoint;
 	/** Answer with the faux provider instead of a model. */
 	readonly faux?: boolean;
 	/** Keep the log in memory instead of a sqlite file. */
@@ -67,12 +66,13 @@ export interface Agent {
 	close(context?: Context): Promise<void>;
 }
 
-export async function createAgent(options: AgentOptions = {}): Promise<{ agent: Agent }> {
+export async function createAgent(options: AgentOptions = {}): Promise<{ agent: Agent; settings: Settings }> {
 	const paths = homePaths(options.home ?? join(homedir(), ".mason", options.name ?? "mason"));
 	await ensureHome(paths, options.soul ?? DEFAULT_SOUL);
+	await ensureCatalog(paths);
+	const settings = await readSettings(paths.settings);
 
-	const { models, ref } =
-		options.faux === true ? fauxModels() : await connectModels(options.model ?? DEFAULT_ENDPOINT, paths.dataDir);
+	const { models, ref } = options.faux === true ? fauxModels() : await connectModels(settings, paths);
 	const registry = createRegistry();
 	registry.install(CodingTools);
 	registry.install(promptExtension(paths));
@@ -96,14 +96,16 @@ export async function createAgent(options: AgentOptions = {}): Promise<{ agent: 
 		BACKGROUND_CONTEXT,
 	);
 
-	const root = await harness.root(BACKGROUND_CONTEXT, { agent: { model: ref, cwd: paths.workspaceDir } });
+	const agentConfig = { model: ref, cwd: paths.workspaceDir, thinkingLevel: settings.thinking };
+	const root = await harness.root(BACKGROUND_CONTEXT, { agent: agentConfig });
 	const stored = await harness.snapshot(AgentDoc, root.id, BACKGROUND_CONTEXT);
 	if (
 		stored?.instructions != null ||
 		stored?.model?.provider !== ref.provider ||
-		stored?.model?.modelId !== ref.modelId
+		stored?.model?.modelId !== ref.modelId ||
+		stored?.thinkingLevel !== settings.thinking
 	) {
-		await root.commit((tx) => configure(tx, root.id, { instructions: null, model: ref }), BACKGROUND_CONTEXT);
+		await root.commit((tx) => configure(tx, root.id, agentConfig), BACKGROUND_CONTEXT);
 	}
 	harness.resume();
 
@@ -128,5 +130,5 @@ export async function createAgent(options: AgentOptions = {}): Promise<{ agent: 
 			device.close();
 		},
 	};
-	return { agent };
+	return { agent, settings };
 }

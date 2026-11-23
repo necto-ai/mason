@@ -32,6 +32,22 @@ suite, the compiler and the linter are the other three, and CI runs all of them 
 its build by reading `ldd --version`, which on NixOS reports glibc. So the launcher reaches for a binary the install did
 not fetch.
 
+## The service files
+
+A home is `~/.mason/<name>` unless `MASON_HOME` says otherwise. Everything a person edits lives in `service/`, and every
+file is read once, at open:
+
+| File | Holds |
+|---|---|
+| `settings.json` | The choice: `provider`, `model`, `thinking`. Mason's file, seeded once. |
+| `models.json` | The registry of available models, pi's schema. Seeded once with the local ollama endpoint and never rewritten. Add a provider here, or edit the one that is there. |
+| `auth.json` | pi's credentials, one per provider: `{ "anthropic": { "type": "api_key", "key": "$ANTHROPIC_API_KEY" } }`. pi creates, reads and resolves it; mason never touches it. A provider's `apiKey` in `models.json` also takes a literal, `$NAME` or `!command`. |
+| `soul.md` | The words the agent is given. |
+
+`service/data/` holds `agent.sqlite`. Nothing switches while the agent runs: change a file, restart, and the next open
+reads it. A model the catalog does not have, or a thinking level the model does not support, is refused at boot with the
+list that would have worked. Unknown keys and secrets in `settings.json` are refused by name.
+
 ## The shape
 
 ```text

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -24,6 +24,42 @@ test("a turn answers", async () => {
 		} finally {
 			await agent.close();
 		}
+	});
+});
+
+test("settings are written once, then read on every open", async () => {
+	await withHome(async (home) => {
+		const settingsPath = join(home, "service", "settings.json");
+		const first = await createAgent({ home, faux: true, storage: "memory" });
+		await first.agent.close();
+		assert.equal(JSON.parse(await readFile(settingsPath, "utf8")).thinking, "off");
+
+		await writeFile(settingsPath, JSON.stringify({ thinking: "low", model: "other:1b", provider: "elsewhere" }));
+		const second = await createAgent({ home, faux: true, storage: "memory" });
+		await second.agent.close();
+		assert.equal(second.settings.thinking, "low");
+		assert.equal(second.settings.model, "other:1b");
+		assert.equal(second.settings.provider, "elsewhere");
+	});
+});
+
+test("a setting that is not one is refused by name", async () => {
+	await withHome(async (home) => {
+		const first = await createAgent({ home, faux: true, storage: "memory" });
+		await first.agent.close();
+		const settingsPath = join(home, "service", "settings.json");
+		await writeFile(settingsPath, JSON.stringify({ thinkingg: "low" }));
+		await assert.rejects(createAgent({ home, faux: true, storage: "memory" }), /unknown setting "thinkingg"/);
+	});
+});
+
+test("a secret in settings.json is refused, because auth.json holds it", async () => {
+	await withHome(async (home) => {
+		const first = await createAgent({ home, faux: true, storage: "memory" });
+		await first.agent.close();
+		const settingsPath = join(home, "service", "settings.json");
+		await writeFile(settingsPath, JSON.stringify({ apiKey: "sk-test" }));
+		await assert.rejects(createAgent({ home, faux: true, storage: "memory" }), /unknown setting "apiKey"/);
 	});
 });
 

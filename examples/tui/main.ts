@@ -12,11 +12,16 @@ import { Container, Editor, matchesKey, ProcessTerminal, Text, TuiMainScreen } f
 import { AssistantEntry, createAgent, type EntryRecord, UserEntry } from "../../package/index.ts";
 
 initTheme();
-const { agent } = await createAgent({ home: process.env.MASON_HOME ?? join(homedir(), ".mason", "tui") });
+const { agent, settings } = await createAgent({
+	home: process.env.MASON_HOME ?? join(homedir(), ".mason", "tui"),
+});
 
 const tui = new TuiMainScreen(new ProcessTerminal());
 const transcript = new Container();
-const editor = new Editor(tui, { borderColor: (line) => line, selectList: getSelectListTheme() });
+const editor = new Editor(tui, {
+	borderColor: (line) => line,
+	selectList: getSelectListTheme(),
+});
 
 tui.addChild(transcript);
 tui.addChild(editor);
@@ -36,7 +41,8 @@ function show(entry: EntryRecord): void {
 		);
 }
 
-transcript.addChild(new Text(`mason · ${agent.id} · ctrl+c to quit`, 1, 0));
+const model = `${settings.provider}/${settings.model}`;
+transcript.addChild(new Text(`mason · ${model} · thinking ${settings.thinking} · ctrl+c to quit`, 1, 0));
 for (const entry of await agent.entries(50)) show(entry);
 
 let busy = false;

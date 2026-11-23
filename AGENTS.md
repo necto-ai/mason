@@ -11,6 +11,10 @@ examples/    complete agents, each one the size of a recipe
 scripts/     operator commands: the offline check
 ```
 
+- Settings are declared, not switched: `service/settings.json` is read once at open, and an agent never changes its
+  model or thinking level while it runs. There is no reload, no `/model`, no setter. A change is a restart.
+- Auth and providers are pi's: `auth.json` and `models.json` are pi's files, read by pi's model runtime. Mason seeds a
+  starting catalog once, checks the choice against it, and parses neither file beyond that. Do not add an auth module.
 - `package/index.ts` is the whole interface: `createAgent(options)` returns an agent, and one agent has a conversation,
   a turn, a transcript and a Chord watch. It stays dead simple, and a change that complicates it is a change to argue for.
 - `examples/tui/main.ts` is the yardstick: a complete agent with a terminal in front of it. It imports the package and
