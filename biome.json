@@ -7,7 +7,6 @@
 	},
 	"files": {
 		"includes": [
-			"src/**",
 			"package/**",
 			"scripts/**",
 			"examples/**",

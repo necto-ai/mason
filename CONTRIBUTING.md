@@ -52,12 +52,12 @@ list that would have worked. Unknown keys and secrets in `settings.json` are ref
 
 ```text
 package/     the interface: createAgent, one conversation, one turn, one watch
-src/         what the interface is made of
+package/src/ what the interface is made of
 examples/    complete agents; the TUI is the main one
 scripts/     the offline check and other operator commands
 ```
 
-Two budgets hold the shape: `src/` and `package/` together stay at or under 1,000 lines, and every example at or under
+Two budgets hold the shape: `package/` stays at or under 1,000 lines, and every example at or under
 100. The example is the proof that the interface is simple: if a complete agent needs more than a hundred lines, the
 change belongs in the package.
 
@@ -67,7 +67,7 @@ Take a row from [FEATURES.md](FEATURES.md).
 
 1. implement it in `examples/tui/main.ts`, working, and run it;
 2. make it robust — failure modes, a second run, a crash mid-turn, and something that pins it;
-3. only then name the core and the inputs, move the core into `package/` or `src/`, and have the example adopt it in the
+3. only then name the core and the inputs, move the core into `package/`, and have the example adopt it in the
    same commit.
 
 An example that does not use a module is a module with no working example. If nothing varies between uses, there is no

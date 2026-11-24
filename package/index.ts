@@ -18,11 +18,11 @@ import {
 } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
-import { localDevice } from "../src/device.ts";
-import { ensureHome, home as homePaths } from "../src/home.ts";
-import { connectModels, ensureCatalog, fauxModels } from "../src/models.ts";
-import { DEFAULT_SOUL, promptExtension } from "../src/prompt.ts";
-import { readSettings, type Settings } from "../src/settings.ts";
+import { localDevice } from "./src/device.ts";
+import { ensureHome, home as homePaths } from "./src/home.ts";
+import { connectModels, ensureCatalog, fauxModels } from "./src/models.ts";
+import { DEFAULT_SOUL, promptExtension } from "./src/prompt.ts";
+import { readSettings, type Settings } from "./src/settings.ts";
 
 export type { Context } from "@earendil-works/chord/context";
 export type {

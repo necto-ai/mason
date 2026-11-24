@@ -3,10 +3,10 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { ensureHome, home as homePaths } from "../../src/home.ts";
-import { catalogPath, connectModels, ensureCatalog } from "../../src/models.ts";
-import { DEFAULT_SOUL } from "../../src/prompt.ts";
 import { createAgent } from "../index.ts";
+import { ensureHome, home as homePaths } from "../src/home.ts";
+import { catalogPath, connectModels, ensureCatalog } from "../src/models.ts";
+import { DEFAULT_SOUL } from "../src/prompt.ts";
 
 async function withHome(run: (dir: string) => Promise<void>): Promise<void> {
 	const dir = await mkdtemp(join(tmpdir(), "mason-config-"));
