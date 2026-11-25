@@ -9,13 +9,13 @@ owns it. The status column is the only thing that changes as we go.
 
 ## Where it stands
 
-`package/index.ts`, 134 lines, is the interface: one agent, one conversation, one turn. `examples/tui/main.ts`, 79 lines,
+`package/index.ts`, 148 lines, is the interface: one agent, one conversation, one turn. `examples/tui/main.ts`, 79 lines,
 is a complete agent with a terminal in front of it, and imports the package and nothing of `src/`.
 
 | It does | With |
 |---|---|
 | opens the durable store | `openNodeSqliteStorage(<home>/service/data/agent.sqlite)`, `MemoryStorage` for `--check` |
-| installs tools | `createRegistry()` + `registry.install(CodingTools)`, pi-durable's own extension |
+| installs tools | `createRegistry()` + `CodingTools`, the three memory reads and `tool_search`, through the 12-tool cap |
 | picks the model | `ModelRuntime.create({ modelsPath, authPath })` over the seeded catalog and pi's credentials, or `fauxProvider()` |
 | places the tools | one pi-env `Connection` to a local daemon, `RemoteExecutionEnv` as the `env` callback |
 | makes the conversation | `harness.root(context, { agent: { model, cwd, thinkingLevel } })` |
@@ -24,7 +24,7 @@ is a complete agent with a terminal in front of it, and imports the package and 
 | runs a turn | `root.submit({ type: "input", content })`, `submission.wait(context)` |
 | shows the result | `root.entries({ order: "ascending" }, 50, undefined, context)`, every entry kind printed |
 | reports failures | `onReport` to stderr, one line |
-| checks itself offline | `--check`: faux provider, temp home, memory storage, fails when no answer |
+| checks itself offline | `--check`: faux provider, temp home, memory storage, one `memory_read` turn, fails when no answer |
 
 What it does not have: a second role or a runtime model switch, a hook or a schedule, a queue, a door, a connector, an
 integration, a projection, a CLI, or a turn that starts without someone typing.
@@ -37,7 +37,7 @@ integration, a projection, a CLI, or a turn that starts without someone typing.
 | Execution split | model and harness here, file tools on the tool machine, `agent/` mounted only there | `src/server/env.ts` | part: `package/src/device.ts`, local daemon, same host, nothing mounted |
 | Providers and keys | the catalog mason writes (provider, endpoint, models) and the credential each provider is called with | `src/server/provider.ts`, `runtime.ts` | part: `package/src/settings.ts`, `package/src/models.ts`, pi's `auth.json` |
 | System prompt | `section(key, render)` in reading order, rendered from the tool machine, byte-identical twice | `src/server/prompt.ts` | part: `package/src/prompt.ts`, 4 of 11 sections (soul, tone, cwd, memory) |
-| Boot extensions | the base set installed at boot: delivery, skills, subagent, codemode, mcp | `src/server/runtime.ts` | part: `CodingTools` and the prompt extension |
+| Boot extensions | the base set installed at boot: delivery, skills, subagent, codemode, mcp | `src/server/runtime.ts` | part: `CodingTools`, the three memory reads and `tool_search` |
 | Roles | two models, `main` and `subagent`, thinking level refused at boot when the catalog lacks it | `src/server/common.ts` | no: one model |
 | Turn limits | bytes on the socket and turns per sender, so a fire cannot spend without a bound | `src/server/limits.ts` | no |
 | Run supervisor | re-arms an input the provider outage left unanswered, after pi-ai's own retries | `src/server/run-retry.ts` | no |
@@ -53,10 +53,10 @@ integration, a projection, a CLI, or a turn that starts without someone typing.
 | Feature | What it does | On `main` | Now |
 |---|---|---|---|
 | Home layout | `agent/` (profile, log, skills, workspace) and `service/` (soul, settings, data, integrations) | `src/server/house.ts` | part: `package/src/home.ts`, agent/ and service/; no integrations, no git |
-| Memory files | the profile, skill manifests and dated logs in `agent/`, rendered in one capped `memory` section | no | part: `package/src/memory.ts`, files, caps and section; no tools, no reviewer |
+| Memory files | the profile, skill manifests and dated logs in `agent/`, rendered in one capped `memory` section | no | part: `package/src/memory.ts` and `package/src/agent-files.ts`, files, section, reads and the fence; no reviewer |
 | Root and common store | `MASON_ROOT` with `common/` and one bot directory, one bot per environment | `src/server/root.ts`, `common.ts` | part: `MASON_HOME` only |
 | The agent's files are git | `agent/` is a repository, so a fact is a file the person can read and revert | `src/server/house.ts` | no: not while the home is unmounted |
-| Skills | `SKILL.md` directories, shipped and personal, indexed in the prompt by path only | `src/server/extensions/skills.ts` | part: `package/src/memory.ts`, discovery, rules and a name/description index; no loader |
+| Skills | `SKILL.md` directories, shipped and personal, indexed in the prompt by path only | `src/server/extensions/skills.ts` | part: `package/src/memory.ts` and `package/src/agent-files.ts`, discovery, rules, index and `memory_read`; no shipped skills |
 | Resident reads | read `agent/` through the execution environment, not `node:fs`, so the prompt shows the bytes the agent wrote | `src/server/resident.ts` | no |
 | First run and day-2 | `init` (one real completion before writing), `new`, `status` | `scripts/init.ts`, `new.ts`, `status.ts` | no |
 | Doctor | read-only checks over the home, one repair command per failure | `src/server/doctor.ts` | no |
@@ -115,8 +115,8 @@ example, because a module with one caller and no varying input is a wrapper.
 
 ## Next
 
-The next three are the rest of the memory split: #243 the tools and the fence, #244 the reviewer on every compaction,
-#245 a minimal subagent. #242, the files and the `memory` section, is on `rewrite`.
+The next two are the rest of the memory split: #244 the reviewer on every compaction, #245 a minimal subagent.
+#242 and #243 are on `rewrite`.
 
 ## The hierarchy
 
