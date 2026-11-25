@@ -58,13 +58,45 @@ function symlink(path: string): boolean {
 	}
 }
 
+function walk(root: string, path: string): Failure | undefined {
+	const rest = relative(root, path)
+		.split(sep)
+		.filter((part) => part !== "" && part !== ".");
+	let current = root;
+	for (const part of rest) {
+		current = join(current, part);
+		let info: ReturnType<typeof lstatSync>;
+		try {
+			info = lstatSync(current);
+		} catch {
+			return undefined;
+		}
+		if (!info.isSymbolicLink()) continue;
+		let resolved: string;
+		try {
+			resolved = realpathSync(current);
+		} catch {
+			return { refused: `"${path}" is a symlink that does not resolve; memory paths stay inside ${root}` };
+		}
+		if (!inside(root, resolved)) {
+			return { refused: `"${path}" resolves to ${resolved}, outside the memory root ${root}` };
+		}
+		current = resolved;
+	}
+	return undefined;
+}
+
 function locate(home: Home, path: string): Located {
 	const root = canonical(home.agentDir);
 	if (path.trim() === "") return { refused: `"${path}" is empty; paths are relative to ${root}` };
 	if (path.split(/[/\\]/).includes(".."))
 		return { refused: `".." is refused in "${path}"; paths stay inside ${root}` };
-	const target = canonical(isAbsolute(path) ? path : join(root, path));
+	const raw = isAbsolute(path) ? path : join(root, path);
+	if (!inside(root, raw)) return { refused: `"${path}" is outside the memory root ${root}` };
+	const target = canonical(raw);
 	if (!inside(root, target)) return { refused: `"${path}" resolves to ${target}, outside the memory root ${root}` };
+	const hole = walk(root, raw);
+	if (hole !== undefined) return hole;
 	if (symlink(target)) {
 		return { refused: `"${path}" is a symlink that does not resolve; memory paths stay inside ${root}` };
 	}

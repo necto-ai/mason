@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync, realpathSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, rmdir, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -274,6 +274,23 @@ test("4. every path is canonical, and a symlink out is refused with its director
 		const absolute = await call(offered, "memory_read", { path: paths.profile });
 		assert.equal(absolute.isError, false);
 		assert.equal(absolute.text, "They build boats.\n");
+
+		await rmdir(paths.skillsDir);
+		const missing = join(paths.home, "missing-skills");
+		await symlink(missing, paths.skillsDir);
+		const nested = await call(offered, "memory_write", {
+			path: "skills/foo/SKILL.md",
+			content: "---\nname: foo\ndescription: Does a thing.\n---\n",
+		});
+		assert.equal(nested.isError, true);
+		assert.match(nested.text, /symlink that does not resolve/);
+		assert.equal(existsSync(missing), false);
+
+		const outsideAlias = join(paths.home, "outside-alias.md");
+		await symlink(paths.profile, outsideAlias);
+		const aliasRead = await call(offered, "memory_read", { path: outsideAlias });
+		assert.equal(aliasRead.isError, true);
+		assert.match(aliasRead.text, /outside the memory root/);
 	});
 });
 
