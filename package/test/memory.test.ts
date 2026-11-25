@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { PromptInput } from "@earendil-works/pi-durable";
 import { ensureHome, type Home, home as homePaths } from "../src/home.ts";
 import {
 	DESCRIPTION_MAX_CHARS,
@@ -16,7 +18,7 @@ import {
 	skillPath,
 	today,
 } from "../src/memory.ts";
-import { DEFAULT_SOUL } from "../src/prompt.ts";
+import { DEFAULT_SOUL, promptSectionKeys, promptSections } from "../src/prompt.ts";
 
 const TAGS = "<memory>\n\n</memory>".length;
 const DAY = "2026-11-25";
@@ -88,20 +90,21 @@ test("3. thirty skills render, a thirty-first is truncated and counted", async (
 			const name = `skill-${String(index).padStart(2, "0")}`;
 			await addSkill(paths, name, `Does job number ${index} when it comes up.`, new Date(2026, 10, 1, 0, 0, index));
 		}
-		const thirty = render(memory(paths, undefined));
+		const profile = "p".repeat(PROFILE_MAX_CHARS);
+		const thirty = render(memory(paths, profile));
 		assert.equal(names(thirty).length, SKILLS_MAX);
 		assert.ok(thirty.length + TAGS <= SECTION_MAX_CHARS);
 		assert.match(thirty, /`log\/2026-11-25\.md`/);
-		assert.equal(fit(memory(paths, undefined)).ok, true);
+		assert.equal(fit(memory(paths, profile)).ok, true);
 
 		await addSkill(paths, "zz-newest", "Arrived last when the work needed it.", new Date(2026, 11, 1, 0, 0, 0));
-		const thirtyOne = render(memory(paths, undefined));
+		const thirtyOne = render(memory(paths, profile));
 		assert.equal(names(thirtyOne).length, SKILLS_MAX);
 		assert.equal(thirtyOne.match(/^\+ \d+ more$/gm)?.length, 1);
 		assert.match(thirtyOne, /\+ 1 more/);
 		assert.equal(names(thirtyOne)[0], "zz-newest");
 		assert.equal(names(thirtyOne).includes("skill-00"), false);
-		const report = fit(memory(paths, undefined));
+		const report = fit(memory(paths, profile));
 		assert.equal(report.ok, false);
 		assert.equal(report.skills.count, SKILLS_MAX + 1);
 		assert.equal(report.skills.limitCount, SKILLS_MAX);
@@ -117,7 +120,8 @@ test("4. two hundred skills render truncated, still under the section", async ()
 				return addSkill(paths, name, `Does hand job ${index} when it comes up.`, same);
 			}),
 		);
-		const rendered = render(memory(paths, undefined));
+		const profile = "p".repeat(PROFILE_MAX_CHARS);
+		const rendered = render(memory(paths, profile));
 		assert.ok(rendered.length + TAGS <= SECTION_MAX_CHARS);
 		assert.equal(names(rendered).length, SKILLS_MAX);
 		assert.deepEqual(
@@ -126,7 +130,7 @@ test("4. two hundred skills render truncated, still under the section", async ()
 		);
 		assert.equal(rendered.match(/^\+ \d+ more$/gm)?.length, 1);
 		assert.match(rendered, /\+ 170 more/);
-		const report = fit(memory(paths, undefined));
+		const report = fit(memory(paths, profile));
 		assert.equal(report.ok, false);
 		assert.equal(report.skills.count, 200);
 		assert.equal(report.skills.limitCount, SKILLS_MAX);
@@ -257,5 +261,18 @@ test("9. fit is the one breakdown and the renderer never exceeds the section", a
 		assert.equal(heavyReport.section.chars, heavyRender.length + TAGS);
 		assert.ok(heavyReport.section.chars <= SECTION_MAX_CHARS);
 		assert.ok(heavyReport.skills.chars <= heavyReport.skills.limit);
+	});
+});
+
+test("the prompt has one memory section, after cwd", async () => {
+	await withHome(async (paths) => {
+		await writeFile(paths.profile, "They are a boat builder.\n");
+		assert.deepEqual(promptSectionKeys(paths), ["soul", "tone", "cwd", "memory"]);
+		const memorySection = promptSections(paths).find((entry) => entry.key === "memory");
+		assert.ok(memorySection !== undefined);
+		const text = await memorySection.render({} as PromptInput, BACKGROUND_CONTEXT);
+		assert.ok(text !== undefined);
+		assert.equal(text.split("They are a boat builder.").length - 1, 1);
+		assert.equal(text.includes("log/"), true);
 	});
 });

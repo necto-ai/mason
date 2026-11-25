@@ -1,5 +1,6 @@
 import { defineExtension, type PromptSection, section } from "@earendil-works/pi-durable";
 import { type Home, readHouseFile } from "./home.ts";
+import { discover, render, today } from "./memory.ts";
 
 export const DEFAULT_SOUL = `You are mason: an assistant that runs continuously on one machine and works for one person.`;
 
@@ -15,7 +16,13 @@ export function promptSections(paths: Home): readonly PromptSection[] {
 		section("soul", async () => (await readHouseFile(paths.soul)) ?? DEFAULT_SOUL, { tag: false }),
 		section("tone", () => TONE),
 		section("cwd", (input) => input.env?.cwd),
-		section("profile", () => readHouseFile(paths.profile)),
+		section("memory", async () =>
+			render({
+				profile: await readHouseFile(paths.profile),
+				skills: discover(paths).skills,
+				today: today(),
+			}),
+		),
 	];
 }
 
