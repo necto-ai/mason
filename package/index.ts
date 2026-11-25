@@ -11,18 +11,22 @@ import {
 	type ConversationView,
 	configure,
 	createRegistry,
+	defineExtension,
 	type EntryRecord,
 	Harness,
 	MemoryStorage,
 	type WatchHandle,
 } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
+import { createToolSearchExtension } from "@earendil-works/pi-durable/tool-search";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
+import { memoryTools } from "./src/agent-files.ts";
 import { localDevice } from "./src/device.ts";
 import { ensureHome, home as homePaths } from "./src/home.ts";
-import { connectModels, ensureCatalog, fauxModels } from "./src/models.ts";
+import { connectModels, ensureCatalog, type FauxStep, fauxModels } from "./src/models.ts";
 import { DEFAULT_SOUL, promptExtension } from "./src/prompt.ts";
 import { readSettings, type Settings } from "./src/settings.ts";
+import { declareTools } from "./src/tools.ts";
 
 export type { Context } from "@earendil-works/chord/context";
 export type {
@@ -33,6 +37,7 @@ export type {
 	WatchHandle,
 } from "@earendil-works/pi-durable";
 export { AssistantEntry, ResetEntry, SystemEntry, ToolResultEntry, UserEntry } from "@earendil-works/pi-durable";
+export type { FauxStep } from "./src/models.ts";
 
 /** What one complete mason agent is made of. Everything else has a default. */
 export interface AgentOptions {
@@ -42,8 +47,8 @@ export interface AgentOptions {
 	readonly name?: string;
 	/** The words the agent is given instead of a person's file. */
 	readonly soul?: string;
-	/** Answer with the faux provider instead of a model. */
-	readonly faux?: boolean;
+	/** Answer with the faux provider instead of a model, or say what it replies. */
+	readonly faux?: boolean | readonly FauxStep[];
 	/** Keep the log in memory instead of a sqlite file. */
 	readonly storage?: "sqlite" | "memory";
 }
@@ -72,9 +77,18 @@ export async function createAgent(options: AgentOptions = {}): Promise<{ agent: 
 	await ensureCatalog(paths);
 	const settings = await readSettings(paths.settings);
 
-	const { models, ref } = options.faux === true ? fauxModels() : await connectModels(settings, paths);
+	const { models, ref } =
+		options.faux === undefined || options.faux === false
+			? await connectModels(settings, paths)
+			: fauxModels(options.faux === true ? undefined : options.faux);
 	const registry = createRegistry();
-	registry.install(CodingTools);
+	for (const extension of declareTools([
+		CodingTools,
+		defineExtension({ name: "memory", tools: memoryTools({ home: paths, write: false }) }),
+		createToolSearchExtension(),
+	])) {
+		registry.install(extension);
+	}
 	registry.install(promptExtension(paths));
 	const device = localDevice(paths.workspaceDir);
 	const storage =

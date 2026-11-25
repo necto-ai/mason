@@ -1,9 +1,9 @@
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Models, Provider } from "@earendil-works/pi-ai";
+import type { JsonObject, Models, Provider } from "@earendil-works/pi-ai";
 import { createModels, getSupportedThinkingLevels } from "@earendil-works/pi-ai/models";
-import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai/providers/faux";
+import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { ModelRef } from "@earendil-works/pi-durable";
 import type { Home } from "./home.ts";
@@ -68,10 +68,20 @@ export async function connectModels(settings: Settings, paths: Home): Promise<Ch
 	return { models, ref: { provider: settings.provider, modelId: settings.model } };
 }
 
-export function fauxModels(text = "ok"): ChatModels {
+/** One scripted faux reply: words, or a tool call the model makes. */
+export type FauxStep = string | { readonly call: string; readonly arguments: JsonObject };
+
+export function fauxModels(steps: readonly FauxStep[] | string = "ok"): ChatModels {
 	const provider = fauxProvider();
 	const models = createModels();
 	models.setProvider(provider.provider as Provider);
-	provider.setResponses(Array.from({ length: 100 }, () => fauxAssistantMessage(fauxText(text))));
+	const script = typeof steps === "string" ? Array.from({ length: 100 }, () => steps) : steps;
+	provider.setResponses(
+		script.map((step) =>
+			typeof step === "string"
+				? fauxAssistantMessage(fauxText(step))
+				: fauxAssistantMessage([fauxToolCall(step.call, step.arguments)], { stopReason: "toolUse" }),
+		),
+	);
 	return { models, ref: { provider: "faux", modelId: "faux-1" } };
 }
