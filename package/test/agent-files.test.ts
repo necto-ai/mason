@@ -111,6 +111,10 @@ test("1b. the reads list and grep the memory", async () => {
 		const missing = await call(offered, "memory_grep", { pattern: "[" });
 		assert.equal(missing.isError, true);
 		assert.match(missing.text, /not a regular expression/);
+
+		const folder = await call(offered, "memory_read", { path: "log" });
+		assert.equal(folder.isError, true);
+		assert.match(folder.text, /is not a file/);
 	});
 });
 
@@ -119,6 +123,13 @@ test("2a. a path outside agent/ is refused, naming the rule and the memory root"
 		const offered = tools(paths, true);
 		const root = realpathSync(paths.agentDir);
 		await writeFile(join(paths.home, "outside.md"), "outside\n");
+		const dangling = join(paths.home, "dangling.md");
+		await symlink(dangling, logPath(paths, today()));
+		const hole = await call(offered, "memory_write", { path: `log/${today()}.md`, content: "pwned\n" });
+		assert.equal(hole.isError, true);
+		assert.match(hole.text, /symlink that does not resolve/);
+		assert.equal(existsSync(dangling), false);
+
 		await mkdir(join(paths.home, "elsewhere"));
 		await writeFile(join(paths.home, "elsewhere", "secret.md"), "secret\n");
 		await symlink(join(paths.home, "outside.md"), join(paths.agentDir, "escape.md"));
@@ -244,6 +255,13 @@ test("4. every path is canonical, and a symlink out is refused with its director
 		assert.equal(written.isError, false);
 		assert.equal(await readFile(paths.profile, "utf8"), "They build boats.\n");
 		assert.equal(await readFile(join(paths.agentDir, "alias.md"), "utf8"), "They build boats.\n");
+
+		const dangling = join(paths.home, "dangling.md");
+		await symlink(dangling, logPath(paths, today()));
+		const hole = await call(offered, "memory_write", { path: `log/${today()}.md`, content: "pwned\n" });
+		assert.equal(hole.isError, true);
+		assert.match(hole.text, /symlink that does not resolve/);
+		assert.equal(existsSync(dangling), false);
 
 		await mkdir(join(paths.home, "elsewhere"));
 		await writeFile(join(paths.home, "elsewhere", "secret.md"), "secret\n");

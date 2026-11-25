@@ -1,4 +1,13 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	lstatSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { defineTool, type ToolExecutionResult, type ToolRegistration } from "@earendil-works/pi-durable";
 import { obj, opt, str } from "@earendil-works/pi-schema";
@@ -41,14 +50,25 @@ function inside(root: string, target: string): boolean {
 	return target === root || target.startsWith(`${root}${sep}`);
 }
 
+function symlink(path: string): boolean {
+	try {
+		return lstatSync(path).isSymbolicLink();
+	} catch {
+		return false;
+	}
+}
+
 function locate(home: Home, path: string): Located {
 	const root = canonical(home.agentDir);
 	if (path.trim() === "") return { refused: `"${path}" is empty; paths are relative to ${root}` };
 	if (path.split(/[/\\]/).includes(".."))
 		return { refused: `".." is refused in "${path}"; paths stay inside ${root}` };
 	const target = canonical(isAbsolute(path) ? path : join(root, path));
-	if (inside(root, target)) return { real: target };
-	return { refused: `"${path}" resolves to ${target}, outside the memory root ${root}` };
+	if (!inside(root, target)) return { refused: `"${path}" resolves to ${target}, outside the memory root ${root}` };
+	if (symlink(target)) {
+		return { refused: `"${path}" is a symlink that does not resolve; memory paths stay inside ${root}` };
+	}
+	return { real: target };
 }
 
 function list(home: Home, path: string): ToolExecutionResult {
@@ -169,7 +189,9 @@ export function memoryTools({
 			({ path }) => {
 				const at = locate(home, path);
 				if ("refused" in at) return refusal(at.refused);
-				if (!existsSync(at.real)) return refusal(`"${path}" does not exist in ${home.agentDir}`);
+				if (statSync(at.real, { throwIfNoEntry: false })?.isFile() !== true) {
+					return refusal(`"${path}" is not a file in ${home.agentDir}`);
+				}
 				read.add(at.real);
 				return answer(readFileSync(at.real, "utf8"));
 			},
