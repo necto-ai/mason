@@ -22,6 +22,7 @@ import {
 	type UsageState,
 	type WatchHandle,
 } from "@earendil-works/pi-durable";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { createToolSearchExtension } from "@earendil-works/pi-durable/tool-search";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
@@ -30,6 +31,7 @@ import { localDevice } from "./src/device.ts";
 import { ensureHome, home as homePaths } from "./src/home.ts";
 import { connectModels, ensureCatalog, type FauxStep, fauxModels } from "./src/models.ts";
 import { DEFAULT_SOUL, promptExtension } from "./src/prompt.ts";
+import { reviewHook } from "./src/review.ts";
 import { readSettings, type Settings } from "./src/settings.ts";
 import { declareTools } from "./src/tools.ts";
 
@@ -59,6 +61,8 @@ export interface AgentOptions {
 	readonly soul?: string;
 	/** Answer with the faux provider instead of a model, or say what it replies. */
 	readonly faux?: boolean | readonly FauxStep[];
+	/** Set false to compact without refreshing memory. */
+	readonly review?: boolean;
 	/** Keep the log in memory instead of a sqlite file. */
 	readonly storage?: "sqlite" | "memory";
 }
@@ -101,26 +105,29 @@ export async function createAgent(options: AgentOptions = {}): Promise<{ agent: 
 			? await connectModels(settings, paths)
 			: fauxModels(options.faux === true ? undefined : options.faux);
 	const registry = createRegistry();
-	for (const extension of declareTools([
-		CodingTools,
-		defineExtension({ name: "memory", tools: memoryTools({ home: paths, write: false }) }),
-		createToolSearchExtension(),
-	])) {
-		registry.install(extension);
-	}
-	registry.install(promptExtension(paths));
+	const extensions = [
+		...declareTools([
+			CodingTools,
+			defineExtension({ name: "memory", tools: memoryTools({ home: paths, write: false }) }),
+			createToolSearchExtension(),
+		]),
+		promptExtension(paths),
+		reviewHook(paths, registry, () => ({ root, harness }), options.review !== false),
+	];
+	for (const extension of extensions) registry.install(extension);
 	const device = localDevice(paths.workspaceDir);
 	const storage =
 		options.storage === "memory"
 			? new MemoryStorage()
 			: await openNodeSqliteStorage(join(paths.dataDir, "agent.sqlite"));
 
-	const harness = await Harness.open(
+	const harness: Harness = await Harness.open(
 		storage,
 		{
 			models,
 			registry,
-			env: async () => device.env,
+			env: async ({ cwd }) => (cwd === paths.agentDir ? new NodeExecutionEnv({ cwd }) : device.env),
+			settings: { extensions, compaction: { backgroundTokens: 0 } },
 			onReport: (report) => {
 				const message = report.error instanceof Error ? report.error.message : String(report.error);
 				console.error(`mason: ${report.kind}: ${message}`);
