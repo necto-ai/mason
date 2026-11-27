@@ -19,7 +19,8 @@ const { agent } = await createAgent({
 });
 try {
 	await writeFile(join(home, "agent", "profile.md"), "They are a boat builder.\n");
-	const turn = await agent.prompt("hello, who are you?");
+	const submission = await agent.submit("hello, who are you?", "followUp");
+	const turn = await submission.wait(context);
 	const entries = await agent.entries(50);
 	console.log(`turn: ${turn.status}`);
 	for (const entry of entries) console.log(`  ${entry.kind}`);

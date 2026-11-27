@@ -7,7 +7,8 @@ import { type TestContext, test } from "node:test";
 import { setTimeout } from "node:timers/promises";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { applyImmutable } from "@earendil-works/chord/delta";
-import { type AgentOptions, type AgentView, AssistantEntry, createAgent } from "../index.ts";
+import { contentText } from "@earendil-works/pi-ai";
+import { type AgentView, createAgent } from "../index.ts";
 
 async function homeFor(t: TestContext) {
 	const home = await mkdtemp(join(tmpdir(), "mason-status-"));
@@ -24,17 +25,18 @@ async function until(read: () => AgentView | undefined): Promise<AgentView> {
 	}
 }
 
-test("watch streams partial, tool, queue, and usage without blocking submission", { timeout: 15_000 }, async (t) => {
+test("steer and follow-up enter at different boundaries", { timeout: 15_000 }, async (t) => {
 	const home = await homeFor(t);
 	const release = Promise.withResolvers<void>();
+	const finish = Promise.withResolvers<void>();
 	let requests = 0;
 	const server = createServer(async (req, res) => {
 		req.resume();
-		const first = ++requests === 1;
+		const request = ++requests;
 		res.writeHead(200, { "content-type": "text/event-stream" });
 		const send = (delta: object, finish_reason: string | null = null) =>
 			res.write(`data: ${JSON.stringify({ id: "test", choices: [{ index: 0, delta, finish_reason }] })}\n\n`);
-		if (first) {
+		if (request === 1) {
 			send({ role: "assistant", content: "partial" });
 			await release.promise;
 			send({
@@ -55,7 +57,8 @@ test("watch streams partial, tool, queue, and usage without blocking submission"
 			});
 			send({}, "tool_calls");
 		} else {
-			send({ role: "assistant", content: "finished" });
+			send({ role: "assistant", content: `answer ${request}` });
+			if (request === 4) await finish.promise;
 			send({}, "stop");
 		}
 		res.end(
@@ -91,6 +94,10 @@ test("watch streams partial, tool, queue, and usage without blocking submission"
 		assert.equal(watch.value.conversation.id, agent.id);
 		assert.deepEqual(watch.value.entries, []);
 		assert.equal(watch.value.docs["pi.live"]?.run, undefined);
+		assert.equal("prompt" in agent, false);
+		// @ts-expect-error The plain JavaScript call must not fall back to an implicit mode.
+		await assert.rejects(() => agent.submit("missing mode"), TypeError);
+		assert.deepEqual(await agent.entries(), []);
 		let previous = watch.value;
 		const frames: AgentView[] = [];
 		watch.start(async (call) => {
@@ -100,7 +107,7 @@ test("watch streams partial, tool, queue, and usage without blocking submission"
 			frames.push(call.value);
 		});
 
-		const first = await agent.submit("first");
+		const first = await agent.submit("first", "steer");
 		assert.equal((await first.status(context)).status, "placed");
 		const active = await until(() =>
 			frames.find((view) =>
@@ -111,12 +118,24 @@ test("watch streams partial, tool, queue, and usage without blocking submission"
 		);
 		assert.deepEqual(active.docs["pi.live"]?.run?.inputs, [first.id]);
 
-		const queued = await agent.submit("withdraw me");
+		const queued = await agent.submit("withdraw me", "followUp");
 		assert.equal((await queued.status(context)).status, "queued");
 		assert.equal(await first.abort(context), "already_placed");
 		await until(() => frames.find((view) => view.docs["pi.inbox"]?.items.some((item) => item.id === queued.id)));
 		assert.equal(await queued.abort(context), "aborted");
 		assert.equal((await queued.wait(context)).reason, "aborted");
+		const followUp = await agent.submit("next run", "followUp");
+		const later = await agent.submit("later run", "followUp");
+		const steer = await agent.submit("current run", "steer");
+		await until(() =>
+			frames.find((view) => {
+				const items = view.docs["pi.inbox"]?.items;
+				return (
+					items?.some((item) => item.id === steer.id && item.mode === "steer") &&
+					items.some((item) => item.id === followUp.id && item.mode === "followUp")
+				);
+			}),
+		);
 
 		release.resolve();
 		await until(() =>
@@ -125,16 +144,40 @@ test("watch streams partial, tool, queue, and usage without blocking submission"
 			),
 		);
 		await writeFile(join(home, "agent", "workspace", "release"), "");
-		const result = await first.wait(context);
-		assert.equal(result.status, "done");
+		await until(() =>
+			frames.find((view) => contentText(view.docs["pi.live"]?.generation?.message?.content ?? []) === "answer 4"),
+		);
+		const finalSteer = await agent.submit("after final", "steer");
+		assert.equal((await finalSteer.status(context)).status, "queued");
+		finish.resolve();
+		for (const submission of [first, steer, followUp, later])
+			assert.equal((await submission.wait(context)).status, "done");
+		const last = await finalSteer.wait(context);
+		assert.equal(last.status, "done");
 		const idle = await until(() =>
 			frames.find(
-				(view) => view.docs["pi.live"]?.run === undefined && view.entries.some((e) => e.id === result.answer),
+				(view) => view.docs["pi.live"]?.run === undefined && view.entries.some((e) => e.id === last.answer),
 			),
 		);
-		assert.equal(idle.entries.find((entry) => entry.id === result.answer)?.model?.[0]?.role, "assistant");
+		const messages = idle.entries.flatMap(({ model }) => {
+			const message = model?.[0];
+			return message?.role === "user" || (message?.role === "assistant" && message.stopReason === "stop")
+				? [contentText(message.content)]
+				: [];
+		});
+		assert.deepEqual(messages, [
+			"first",
+			"current run",
+			"answer 2",
+			"next run",
+			"answer 3",
+			"later run",
+			"answer 4",
+			"after final",
+			"answer 5",
+		]);
 		assert.equal(idle.docs["pi.inbox"]?.items.length, 0);
-		assert.equal(idle.docs["pi.usage"]?.models["ollama/bonsai-2:9b"]?.totalTokens, 24);
+		assert.equal(idle.docs["pi.usage"]?.models["ollama/bonsai-2:9b"]?.totalTokens, 60);
 		assert.deepEqual(await watch.stop(), { kind: "stopped" });
 		assert.deepEqual(await watch.stop(), { kind: "stopped" });
 		const closing = await agent.watch();
@@ -143,29 +186,25 @@ test("watch streams partial, tool, queue, and usage without blocking submission"
 		assert.deepEqual(await closing.closed, { kind: "ended" });
 	} finally {
 		release.resolve();
+		finish.resolve();
 		await agent.close();
 	}
 });
 
-test("overlapping prompts preserve their own answer; a failed turn preserves its reason and detail", async (t) => {
-	const faux: AgentOptions["faux"] = ["first answer", "second answer", { call: "memory_list", arguments: {} }];
-	const { agent } = await createAgent({ home: await homeFor(t), storage: "memory", faux });
+test("a failed submission exposes pi-durable's settlement and watched failure", async (t) => {
+	const { agent } = await createAgent({
+		home: await homeFor(t),
+		storage: "memory",
+		faux: [{ call: "memory_list", arguments: {} }],
+	});
 	t.after(() => agent.close());
-	const first = agent.prompt("first");
-	const second = agent.prompt("second");
-	for (const [turn, text] of [
-		[await first, "first answer"],
-		[await second, "second answer"],
-	] as const) {
-		assert.equal(turn.status, "done");
-		assert.equal(turn.message?.content.find((part) => part.type === "text")?.text, text);
-		const answer = await agent.conversation.commit((tx) => tx.entry(AssistantEntry, turn.answer), context);
-		assert.deepEqual(turn.message, answer?.model?.[0]);
-	}
 	await agent.conversation.configure({ maxTurns: 1 }, context);
-	const failed = await agent.prompt("third");
+	const submission = await agent.submit("one round", "followUp");
+	const failed = await submission.wait(context);
 	assert.equal(failed.status, "unanswered");
 	assert.equal(failed.reason, "turn_limit");
 	assert.equal(failed.detail, "1 turn");
-	assert.equal(failed.message, undefined);
+	const watch = await agent.watch();
+	assert.equal(watch.value.docs["pi.live"]?.runFailure?.reason, failed.reason);
+	await watch.stop();
 });

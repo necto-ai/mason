@@ -81,7 +81,7 @@ editor.onSubmit = async (input) => {
 	editor.addToHistory(text);
 	submissionError.setText("");
 	try {
-		await agent.submit(text);
+		await agent.submit(text, "followUp");
 	} catch (error) {
 		submissionError.setText(String(error));
 		tui.requestRender();

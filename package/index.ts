@@ -2,10 +2,8 @@ import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT, type Context } from "@earendil-works/chord/context";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
 	AgentDoc,
-	AssistantEntry,
 	type Conversation,
 	type ConversationId,
 	type ConversationView,
@@ -17,7 +15,6 @@ import {
 	type InboxState,
 	type LiveState,
 	MemoryStorage,
-	type SettledSubmissionRecord,
 	type Submission,
 	type UsageState,
 	type WatchHandle,
@@ -75,18 +72,11 @@ export type AgentView = ConversationView & {
 	};
 };
 
-/** What a turn settled as, and the answer it produced. */
-export type PromptResult = Extract<SettledSubmissionRecord, { type: "input" }> & {
-	readonly message?: AssistantMessage;
-};
-
 export interface Agent {
 	readonly id: ConversationId;
 	readonly conversation: Conversation;
-	/** Admit input without waiting for an answer. */
-	submit(text: string, context?: Context): Promise<Submission>;
-	/** One turn: the message in, the answer out. Resolves when the turn settles. */
-	prompt(text: string, context?: Context): Promise<PromptResult>;
+	/** Admit input without waiting: steer at the next tool or final boundary, or follow up after the run. */
+	submit(text: string, mode: "followUp" | "steer", context?: Context): Promise<Submission>;
 	/** The transcript, oldest first. */
 	entries(limit?: number, context?: Context): Promise<readonly EntryRecord[]>;
 	/** Chord's watch over the conversation: the view, then its changes. */
@@ -152,16 +142,9 @@ export async function createAgent(options: AgentOptions = {}): Promise<{ agent: 
 	const agent: Agent = {
 		id: root.id,
 		conversation: root,
-		submit(text, context = BACKGROUND_CONTEXT) {
-			return root.submit({ type: "input", content: text, requestId: randomUUID() }, context);
-		},
-		async prompt(text, context = BACKGROUND_CONTEXT) {
-			const submission = await agent.submit(text, context);
-			const settled = await submission.wait(context);
-			if (settled.type !== "input") throw new Error(`Expected input settlement for ${submission.id}`);
-			if (settled.status === "unanswered") return settled;
-			const answer = await root.commit((tx) => tx.entry(AssistantEntry, settled.answer), context);
-			return { ...settled, message: answer?.model?.[0] as AssistantMessage | undefined };
+		async submit(text, mode, context = BACKGROUND_CONTEXT) {
+			if (mode !== "followUp" && mode !== "steer") throw new TypeError("Expected submission mode followUp or steer");
+			return root.submit({ type: "input", content: text, requestId: randomUUID(), whenBusy: mode }, context);
 		},
 		async entries(limit = 50, context = BACKGROUND_CONTEXT) {
 			return (await root.entries({ order: "ascending" }, limit, undefined, context)).items;
