@@ -14,7 +14,12 @@ import {
 	defineExtension,
 	type EntryRecord,
 	Harness,
+	type InboxState,
+	type LiveState,
 	MemoryStorage,
+	type SettledSubmissionRecord,
+	type Submission,
+	type UsageState,
 	type WatchHandle,
 } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
@@ -32,6 +37,11 @@ export type { Context } from "@earendil-works/chord/context";
 export type {
 	ConversationView,
 	EntryRecord,
+	InboxState,
+	LiveState,
+	SettledSubmissionRecord,
+	Submission,
+	UsageState,
 	WatchCall,
 	WatchEnd,
 	WatchHandle,
@@ -53,21 +63,30 @@ export interface AgentOptions {
 	readonly storage?: "sqlite" | "memory";
 }
 
+export type AgentView = ConversationView & {
+	readonly docs: {
+		readonly "pi.live"?: LiveState;
+		readonly "pi.inbox"?: InboxState;
+		readonly "pi.usage"?: UsageState;
+	};
+};
+
 /** What a turn settled as, and the answer it produced. */
-export interface PromptResult {
-	readonly status: "done" | "unanswered";
+export type PromptResult = Extract<SettledSubmissionRecord, { type: "input" }> & {
 	readonly message?: AssistantMessage;
-}
+};
 
 export interface Agent {
 	readonly id: ConversationId;
 	readonly conversation: Conversation;
+	/** Admit input without waiting for an answer. */
+	submit(text: string, context?: Context): Promise<Submission>;
 	/** One turn: the message in, the answer out. Resolves when the turn settles. */
 	prompt(text: string, context?: Context): Promise<PromptResult>;
 	/** The transcript, oldest first. */
 	entries(limit?: number, context?: Context): Promise<readonly EntryRecord[]>;
 	/** Chord's watch over the conversation: the view, then its changes. */
-	watch(context?: Context): Promise<WatchHandle<ConversationView>>;
+	watch(context?: Context): Promise<WatchHandle<AgentView>>;
 	close(context?: Context): Promise<void>;
 }
 
@@ -126,12 +145,16 @@ export async function createAgent(options: AgentOptions = {}): Promise<{ agent: 
 	const agent: Agent = {
 		id: root.id,
 		conversation: root,
+		submit(text, context = BACKGROUND_CONTEXT) {
+			return root.submit({ type: "input", content: text, requestId: randomUUID() }, context);
+		},
 		async prompt(text, context = BACKGROUND_CONTEXT) {
-			const submission = await root.submit({ type: "input", content: text, requestId: randomUUID() }, context);
+			const submission = await agent.submit(text, context);
 			const settled = await submission.wait(context);
-			const page = await root.entries({ order: "ascending" }, 200, undefined, context);
-			const answer = page.items.findLast((entry) => AssistantEntry.is(entry));
-			return { status: settled.status, message: answer?.model?.[0] as AssistantMessage | undefined };
+			if (settled.type !== "input") throw new Error(`Expected input settlement for ${submission.id}`);
+			if (settled.status === "unanswered") return settled;
+			const answer = await root.commit((tx) => tx.entry(AssistantEntry, settled.answer), context);
+			return { ...settled, message: answer?.model?.[0] as AssistantMessage | undefined };
 		},
 		async entries(limit = 50, context = BACKGROUND_CONTEXT) {
 			return (await root.entries({ order: "ascending" }, limit, undefined, context)).items;

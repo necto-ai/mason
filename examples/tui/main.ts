@@ -23,7 +23,13 @@ const editor = new Editor(tui, {
 	selectList: getSelectListTheme(),
 });
 
+const model = `${settings.provider}/${settings.model}`;
+const status = new Text("", 1, 0);
+const submissionError = new Text("", 1, 0);
+tui.addChild(new Text(`mason · ${model} · thinking ${settings.thinking} · ctrl+c to quit`, 1, 0));
 tui.addChild(transcript);
+tui.addChild(status);
+tui.addChild(submissionError);
 tui.addChild(editor);
 tui.setFocus(editor);
 
@@ -41,30 +47,43 @@ function show(entry: EntryRecord): void {
 		);
 }
 
-const model = `${settings.provider}/${settings.model}`;
-transcript.addChild(new Text(`mason · ${model} · thinking ${settings.thinking} · ctrl+c to quit`, 1, 0));
-for (const entry of await agent.entries(50)) show(entry);
+const watch = await agent.watch();
+let shown: readonly EntryRecord[] | undefined;
+function render(view: typeof watch.value): void {
+	if (shown !== view.entries) {
+		shown = view.entries;
+		transcript.clear();
+		for (const entry of shown) show(entry);
+	}
+	const live = view.docs["pi.live"];
+	const queued = view.docs["pi.inbox"]?.items.length ?? 0;
+	const tool = live?.tools?.find((slot) => slot.status === "running");
+	const state = live?.compactions?.length ? "compacting" : (tool?.name ?? (live?.run ? "working" : "idle"));
+	const failure = live?.runFailure;
+	status.setText(
+		`${state}${queued ? ` · ${queued} queued` : ""}${failure ? ` · ${failure.detail ?? failure.reason}` : ""}`,
+	);
+	tui.requestRender();
+}
+render(watch.value);
+watch.start(async (call) => {
+	if (call.kind === "value") render(call.value);
+	else {
+		status.setText(`watch: ${String(call.error)}`);
+		tui.requestRender();
+	}
+});
 
-let busy = false;
 editor.onSubmit = async (input) => {
 	const text = input.trim();
-	if (text === "" || busy) return;
-	busy = true;
-	editor.disableSubmit = true;
+	if (text === "") return;
 	editor.setText("");
 	editor.addToHistory(text);
-	transcript.addChild(new UserMessageComponent(text, getMarkdownTheme()));
-	tui.requestRender();
+	submissionError.setText("");
 	try {
-		const turn = await agent.prompt(text);
-		if (turn.message !== undefined)
-			transcript.addChild(new AssistantMessageComponent(turn.message, false, getMarkdownTheme()));
-		else transcript.addChild(new Text(`(${turn.status})`, 1, 0));
+		await agent.submit(text);
 	} catch (error) {
-		transcript.addChild(new Text(error instanceof Error ? error.message : String(error), 1, 0));
-	} finally {
-		busy = false;
-		editor.disableSubmit = false;
+		submissionError.setText(String(error));
 		tui.requestRender();
 	}
 };
