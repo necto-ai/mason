@@ -32,6 +32,11 @@ async function fixture(
 	return { agent, home };
 }
 
+async function finishFollowUp(agent: Agent, text: string) {
+	const submission = await agent.submit(text, "followUp");
+	assert.equal((await submission.wait(context)).status, "done");
+}
+
 async function pad(agent: Agent) {
 	// Enough active context for a real compaction cut without another model request.
 	await agent.conversation.submit(
@@ -70,14 +75,14 @@ test("three skips preserve four rounds; the fifth reviews before compaction and 
 		"summary four",
 		"uses new memory",
 	]);
-	assert.equal((await agent.prompt("What did the first four steps show?")).status, "done");
+	await finishFollowUp(agent, "What did the first four steps show?");
 	assert.equal((await agent.entries()).filter(ToolResultEntry.is).length, 4);
 	for (let i = 0; i < 3; i++) {
 		const { id } = await compact(agent);
 		assert.deepEqual(await children(agent, id), []);
 		assert.deepEqual((await reviews(agent))[i]?.data, { taskId: id, outcome: "skipped", reason: "few-rounds" });
 	}
-	assert.equal((await agent.prompt("And the fifth?")).status, "done");
+	await finishFollowUp(agent, "And the fifth?");
 	const { id, entry } = await compact(agent);
 	const [child] = await children(agent, id);
 	assert.ok(child);
@@ -105,7 +110,7 @@ test("three skips preserve four rounds; the fifth reviews before compaction and 
 	for (const write of writes) assert.ok(write.id < review.id && JSON.stringify(write.model).includes("wrote "));
 	assert.equal(await readFile(join(home, "agent", "profile.md"), "utf8"), profile);
 	assert.equal(await readFile(join(home, "agent", "skills", "caulk", "SKILL.md"), "utf8"), skill);
-	assert.equal((await agent.prompt("What do you remember?")).status, "done");
+	await finishFollowUp(agent, "What do you remember?");
 	const system = (await agent.entries()).filter(SystemEntry.is).at(-1);
 	assert.match(JSON.stringify(system), /oak keel/);
 	assert.match(JSON.stringify(system), /Caulking the hull/);
@@ -116,7 +121,7 @@ test("three skips preserve four rounds; the fifth reviews before compaction and 
 
 test("review:false still compacts without a record or child", async (t) => {
 	const { agent } = await fixture(t, [read(1), read(2), read(3), read(4), read(5), "answer", "summary"], false);
-	assert.equal((await agent.prompt("Collect findings")).status, "done");
+	await finishFollowUp(agent, "Collect findings");
 	const { id } = await compact(agent);
 	assert.deepEqual(await reviews(agent), []);
 	assert.deepEqual(await children(agent, id), []);
@@ -138,7 +143,7 @@ test("a thrown review tool fails the review, not the compaction, and doesn't mov
 		"second review",
 		"next summary",
 	]);
-	assert.equal((await agent.prompt("Collect findings")).status, "done");
+	await finishFollowUp(agent, "Collect findings");
 	const path = join(home, "agent", "profile.md");
 	await mkdir(path);
 	const failure = await compact(agent);
@@ -149,7 +154,7 @@ test("a thrown review tool fails the review, not the compaction, and doesn't mov
 		reason: "tool-error",
 		conversationId: (await children(agent, failure.id))[0]?.id,
 	});
-	assert.equal((await agent.prompt("Can you still answer?")).status, "done");
+	await finishFollowUp(agent, "Can you still answer?");
 	await rm(path, { recursive: true });
 	const success = await compact(agent);
 	assert.deepEqual((await reviews(agent))[1]?.data, {
@@ -215,7 +220,7 @@ const five = [read(1), read(2), read(3), read(4), read(5), "findings recorded"];
 
 test("close after the write resumes the same review and commits it once", { timeout: 15_000 }, async (t) => {
 	const { agent: seeded, home } = await fixture(t, five, true, "sqlite");
-	assert.equal((await seeded.prompt("Make findings")).status, "done");
+	await finishFollowUp(seeded, "Make findings");
 	await pad(seeded);
 	await seeded.close();
 
@@ -269,7 +274,7 @@ test("close after the write resumes the same review and commits it once", { time
 
 test("a timed-out reviewer is stopped and compaction still completes", { timeout: 15_000 }, async (t) => {
 	const { agent: seeded, home } = await fixture(t, five, true, "sqlite");
-	assert.equal((await seeded.prompt("Make findings")).status, "done");
+	await finishFollowUp(seeded, "Make findings");
 	await seeded.close();
 	const disconnected = Promise.withResolvers<void>();
 	let requests = 0;
@@ -285,7 +290,7 @@ test("a timed-out reviewer is stopped and compaction still completes", { timeout
 		await disconnected.promise;
 		assert.match(JSON.stringify(await reviews(agent)), /"outcome":"failed","reason":"timeout"/);
 		await assertReviewerAborted(agent, id);
-		assert.equal((await agent.prompt("Are you still there?")).status, "done");
+		await finishFollowUp(agent, "Are you still there?");
 		assert.equal(requests, 3);
 	} finally {
 		await agent.close();
@@ -305,7 +310,7 @@ async function assertReviewerAborted(agent: Agent, id: TaskId) {
 
 test("cancelling compaction stops its reviewer without consuming the boundary", { timeout: 15_000 }, async (t) => {
 	const { agent: seeded, home } = await fixture(t, five, true, "sqlite");
-	assert.equal((await seeded.prompt("Make findings")).status, "done");
+	await finishFollowUp(seeded, "Make findings");
 	await pad(seeded);
 	await seeded.close();
 	const held = Promise.withResolvers<void>();
@@ -340,7 +345,7 @@ test("cancelling compaction stops its reviewer without consuming the boundary", 
 
 test("soft-threshold compaction runs after settlement and before queued input", { timeout: 15_000 }, async (t) => {
 	const { agent: seeded, home } = await fixture(t, ["seed answer"], true, "sqlite");
-	assert.equal((await seeded.prompt("Remember the initial turn")).status, "done");
+	await finishFollowUp(seeded, "Remember the initial turn");
 	await pad(seeded);
 	await seeded.close();
 	const summary = Promise.withResolvers<ServerResponse>();
@@ -356,13 +361,13 @@ test("soft-threshold compaction runs after settlement and before queued input", 
 	});
 	const { agent } = await createAgent({ home });
 	try {
-		const first = await agent.submit("first");
+		const first = await agent.submit("first", "followUp");
 		assert.equal((await first.wait(context)).status, "done");
 		const res = await summary.promise;
 		const watch = await agent.watch();
 		assert.equal(watch.value.docs["pi.live"]?.compactions?.[0]?.trigger, "threshold");
 		await watch.stop();
-		const next = await agent.submit("next");
+		const next = await agent.submit("next", "followUp");
 		assert.equal((await next.status(context)).status, "queued");
 		reply(res, "summary of early history");
 		assert.equal((await next.wait(context)).status, "done");
