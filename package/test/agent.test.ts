@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { AssistantEntry, createAgent } from "../index.ts";
 
 async function withHome(run: (home: string) => Promise<void>): Promise<void> {
@@ -18,9 +19,9 @@ test("a turn answers", async () => {
 	await withHome(async (home) => {
 		const { agent } = await createAgent({ home, faux: true, storage: "memory" });
 		try {
-			const turn = await agent.prompt("hello");
-			assert.equal(turn.status, "done");
-			assert.equal(turn.message?.role, "assistant");
+			const submission = await agent.submit("hello", "followUp");
+			assert.equal((await submission.wait(context)).status, "done");
+			assert.equal((await agent.entries()).filter(AssistantEntry.is).length, 1);
 		} finally {
 			await agent.close();
 		}
@@ -66,7 +67,8 @@ test("a secret in settings.json is refused, because auth.json holds it", async (
 test("a conversation survives a reopen", async () => {
 	await withHome(async (home) => {
 		const first = await createAgent({ home, faux: true });
-		await first.agent.prompt("remember this");
+		const submission = await first.agent.submit("remember this", "followUp");
+		await submission.wait(context);
 		await first.agent.close();
 
 		const second = await createAgent({ home, faux: true });

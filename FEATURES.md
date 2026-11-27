@@ -21,8 +21,8 @@ with a terminal in front of it, and imports the package and nothing of `src/`.
 | makes the conversation | `harness.root(context, { agent: { model, cwd, thinkingLevel } })` |
 | writes the prompt | `promptExtension` sections: soul, tone, cwd, memory; `configure()` commits the model, cwd and thinking level when they differ |
 | finishes old runs | `harness.resume()` |
-| runs a turn | `agent.submit(text)` admits input; `agent.prompt(text)` also waits and reads the settled answer |
-| shows the result | `agent.watch()` supplies the transcript window, live run, inbox, and usage in one view |
+| admits input | `agent.submit(text, "followUp")` or `"steer"` returns a durable `Submission`. Follow-ups wait for the run to finish; steers can also enter after tools |
+| shows the result | `agent.watch()` supplies the transcript window and all mounted pi-durable documents, including live run, inbox, and usage, in one view |
 | reports failures | `onReport` to stderr, one line |
 | checks itself offline | `--check`: faux provider, temp home, memory storage, one `memory_read` turn, fails when no answer |
 
