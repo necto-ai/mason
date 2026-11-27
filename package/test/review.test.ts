@@ -271,17 +271,67 @@ test("a timed-out reviewer is stopped and compaction still completes", { timeout
 	const { agent: seeded, home } = await fixture(t, five, true, "sqlite");
 	assert.equal((await seeded.prompt("Make findings")).status, "done");
 	await seeded.close();
+	const disconnected = Promise.withResolvers<void>();
 	let requests = 0;
 	await provider(t, home, (_body, res) => {
-		if (++requests > 1) reply(res, requests === 2 ? "summary" : "next answer");
+		if (++requests === 1) res.once("close", disconnected.resolve);
+		else reply(res, requests === 2 ? "summary" : "next answer");
 	});
 	const timeout = AbortSignal.timeout;
 	t.mock.method(AbortSignal, "timeout", (ms: number) => timeout(ms === 90_000 ? 1000 : ms));
 	const { agent } = await createAgent({ home });
 	try {
-		await compact(agent);
+		const { id } = await compact(agent);
+		await disconnected.promise;
 		assert.match(JSON.stringify(await reviews(agent)), /"outcome":"failed","reason":"timeout"/);
+		await assertReviewerAborted(agent, id);
 		assert.equal((await agent.prompt("Are you still there?")).status, "done");
+		assert.equal(requests, 3);
+	} finally {
+		await agent.close();
+	}
+});
+
+async function assertReviewerAborted(agent: Agent, id: TaskId) {
+	const [child] = await children(agent, id);
+	assert.ok(child);
+	const submission = await agent.conversation.commit(
+		(tx) => tx.submissionByRequest(child.id, `review:${id}`),
+		context,
+	);
+	assert.equal(submission?.status, "unanswered");
+	assert.equal(submission.reason, "aborted");
+}
+
+test("cancelling compaction stops its reviewer without consuming the boundary", { timeout: 15_000 }, async (t) => {
+	const { agent: seeded, home } = await fixture(t, five, true, "sqlite");
+	assert.equal((await seeded.prompt("Make findings")).status, "done");
+	await pad(seeded);
+	await seeded.close();
+	const held = Promise.withResolvers<void>();
+	const disconnected = Promise.withResolvers<void>();
+	let requests = 0;
+	await provider(t, home, (_body, res) => {
+		if (++requests === 1) {
+			res.once("close", disconnected.resolve);
+			held.resolve();
+		} else reply(res, requests === 2 ? "review done" : "summary");
+	});
+	const { agent } = await createAgent({ home });
+	try {
+		const id = await agent.conversation.compact(undefined, context);
+		await held.promise;
+		await agent.conversation.abort(context);
+		await disconnected.promise;
+		await assertReviewerAborted(agent, id);
+		assert.deepEqual(await reviews(agent), []);
+		assert.equal((await agent.entries()).some(CompactionEntry.is), false);
+		const next = await compact(agent);
+		assert.deepEqual((await reviews(agent))[0]?.data, {
+			taskId: next.id,
+			outcome: "reviewed",
+			conversationId: (await children(agent, next.id))[0]?.id,
+		});
 		assert.equal(requests, 3);
 	} finally {
 		await agent.close();
