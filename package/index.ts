@@ -19,6 +19,7 @@ import {
 	type UsageState,
 	type WatchHandle,
 } from "@earendil-works/pi-durable";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { createToolSearchExtension } from "@earendil-works/pi-durable/tool-search";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
@@ -27,6 +28,7 @@ import { localDevice } from "./src/device.ts";
 import { ensureHome, home as homePaths } from "./src/home.ts";
 import { connectModels, ensureCatalog, type FauxStep, fauxModels } from "./src/models.ts";
 import { DEFAULT_SOUL, promptExtension } from "./src/prompt.ts";
+import { revisionHook } from "./src/revision.ts";
 import { readSettings, type Settings } from "./src/settings.ts";
 import { declareTools } from "./src/tools.ts";
 
@@ -56,6 +58,10 @@ export interface AgentOptions {
 	readonly soul?: string;
 	/** Answer with the faux provider instead of a model, or say what it replies. */
 	readonly faux?: boolean | readonly FauxStep[];
+	/** Set false to compact without revising memory. */
+	readonly revise?: boolean;
+	/** Maximum model turns per memory revision. Defaults to 20. */
+	readonly revisionMaxTurns?: number;
 	/** Keep the log in memory instead of a sqlite file. */
 	readonly storage?: "sqlite" | "memory";
 }
@@ -81,6 +87,9 @@ export interface Agent {
 }
 
 export async function createAgent(options: AgentOptions = {}): Promise<{ agent: Agent; settings: Settings }> {
+	const revisionMaxTurns = options.revisionMaxTurns === undefined ? 20 : options.revisionMaxTurns;
+	if (!Number.isSafeInteger(revisionMaxTurns) || revisionMaxTurns < 1)
+		throw new RangeError("revisionMaxTurns must be a positive integer");
 	const paths = homePaths(options.home ?? join(homedir(), ".mason", options.name ?? "mason"));
 	await ensureHome(paths, options.soul ?? DEFAULT_SOUL);
 	await ensureCatalog(paths);
@@ -91,26 +100,29 @@ export async function createAgent(options: AgentOptions = {}): Promise<{ agent: 
 			? await connectModels(settings, paths)
 			: fauxModels(options.faux === true ? undefined : options.faux);
 	const registry = createRegistry();
-	for (const extension of declareTools([
-		CodingTools,
-		defineExtension({ name: "memory", tools: memoryTools({ home: paths, write: false }) }),
-		createToolSearchExtension(),
-	])) {
-		registry.install(extension);
-	}
-	registry.install(promptExtension(paths));
+	const extensions = [
+		...declareTools([
+			CodingTools,
+			defineExtension({ name: "memory", tools: memoryTools({ home: paths, write: false }) }),
+			createToolSearchExtension(),
+		]),
+		promptExtension(paths),
+		revisionHook(paths, registry, () => ({ root, harness }), options.revise !== false, revisionMaxTurns),
+	];
+	for (const extension of extensions) registry.install(extension);
 	const device = localDevice(paths.workspaceDir);
 	const storage =
 		options.storage === "memory"
 			? new MemoryStorage()
 			: await openNodeSqliteStorage(join(paths.dataDir, "agent.sqlite"));
 
-	const harness = await Harness.open(
+	const harness: Harness = await Harness.open(
 		storage,
 		{
 			models,
 			registry,
-			env: async () => device.env,
+			env: async ({ cwd }) => (cwd === paths.agentDir ? new NodeExecutionEnv({ cwd }) : device.env),
+			settings: { extensions, compaction: { backgroundTokens: 0 } },
 			onReport: (report) => {
 				const message = report.error instanceof Error ? report.error.message : String(report.error);
 				console.error(`mason: ${report.kind}: ${message}`);

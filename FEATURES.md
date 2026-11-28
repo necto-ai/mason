@@ -24,10 +24,11 @@ with a terminal in front of it, and imports the package and nothing of `src/`.
 | admits input | `agent.submit(text, "followUp")` or `"steer"` returns a durable `Submission`. Follow-ups wait for the run to finish; steers can also enter after tools |
 | shows the result | `agent.watch()` supplies the transcript window and all mounted pi-durable documents, including live run, inbox, and usage, in one view |
 | reports failures | `onReport` to stderr, one line |
-| checks itself offline | `--check`: faux provider, temp home, memory storage, one `memory_read` turn, fails when no answer |
+| revises memory | `beforeCompact` waits for an isolated revision after five tool results; the next turn reads the new memory |
+| checks itself offline | `npm run check`: faux provider, temp home, completed turn and compaction that writes `profile.md` |
 
-What it does not have: a second role or a runtime model switch, a hook or a schedule, a queue, a door, a connector, an
-integration, a projection, a CLI, or a turn that starts without someone typing.
+What it does not have: a second role or a runtime model switch, a schedule, a server, a connector, an integration,
+a projection, a CLI, or a user-facing turn that starts without someone typing.
 
 ## A. The harness and the turn
 
@@ -53,7 +54,7 @@ integration, a projection, a CLI, or a turn that starts without someone typing.
 | Feature | What it does | On `main` | Now |
 |---|---|---|---|
 | Home layout | `agent/` (profile, log, skills, workspace) and `service/` (soul, settings, data, integrations) | `src/server/house.ts` | part: `package/src/home.ts`, agent/ and service/; no integrations, no git |
-| Memory files | the profile, skill manifests and dated logs in `agent/`, rendered in one capped `memory` section | no | part: `package/src/memory.ts` and `package/src/agent-files.ts`, files, section, reads and the fence; no reviewer |
+| Memory files | the profile, skill manifests and dated logs in `agent/`, rendered in one capped `memory` section | no | in example: files, prompt and fenced tools; compaction revises memory through a separate revision |
 | Root and common store | `MASON_ROOT` with `common/` and one bot directory, one bot per environment | `src/server/root.ts`, `common.ts` | part: `MASON_HOME` only |
 | The agent's files are git | `agent/` is a repository, so a fact is a file the person can read and revert | `src/server/house.ts` | no: not while the home is unmounted |
 | Skills | `SKILL.md` directories, shipped and personal, indexed in the prompt by path only | `src/server/extensions/skills.ts` | part: `package/src/memory.ts` and `package/src/agent-files.ts`, discovery, rules, index and `memory_read`; no shipped skills |
@@ -115,7 +116,7 @@ example, because a module with one caller and no varying input is a wrapper.
 
 ## Next
 
-The next two are the rest of the memory split: #244 the reviewer on every compaction, #245 a minimal subagent.
+Next: #245, a minimal subagent.
 #242 and #243 are on `rewrite`.
 
 ## The hierarchy
