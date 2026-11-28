@@ -9,8 +9,8 @@ owns it. The status column is the only thing that changes as we go.
 
 ## Where it stands
 
-`package/index.ts`, 148 lines, is the interface: one agent, one conversation, one turn. `examples/tui/main.ts`, 79 lines,
-is a complete agent with a terminal in front of it, and imports the package and nothing of `src/`.
+`package/index.ts` is the interface: one agent, one conversation, one turn. `examples/tui/main.ts` is a complete agent
+with a terminal in front of it, and imports the package and nothing of `src/`.
 
 | It does | With |
 |---|---|
@@ -21,8 +21,8 @@ is a complete agent with a terminal in front of it, and imports the package and 
 | makes the conversation | `harness.root(context, { agent: { model, cwd, thinkingLevel } })` |
 | writes the prompt | `promptExtension` sections: soul, tone, cwd, memory; `configure()` commits the model, cwd and thinking level when they differ |
 | finishes old runs | `harness.resume()` |
-| runs a turn | `root.submit({ type: "input", content })`, `submission.wait(context)` |
-| shows the result | `root.entries({ order: "ascending" }, 50, undefined, context)`, every entry kind printed |
+| admits input | `agent.submit(text, "followUp")` or `"steer"` returns a durable `Submission`. Follow-ups wait for the run to finish; steers can also enter after tools |
+| shows the result | `agent.watch()` supplies the transcript window and all mounted pi-durable documents, including live run, inbox, and usage, in one view |
 | reports failures | `onReport` to stderr, one line |
 | checks itself offline | `--check`: faux provider, temp home, memory storage, one `memory_read` turn, fails when no answer |
 
@@ -73,7 +73,7 @@ integration, a projection, a CLI, or a turn that starts without someone typing.
 | Projection | a whitelist: an entry kind is invisible until named, reasoning and arguments never cross | `src/server/projection.ts`, `read-model.ts` | no: every entry printed |
 | Attachments | a content id merged from the run's entry, never a path | `src/server/attachments.ts`, `assets.ts` | no |
 | Untrusted text | text from outside the conversation is fenced, labelled and capped before the model sees it | `src/server/untrusted.ts` | no |
-| Status | what a client shows about the agent, all derived from committed state | `src/server/status.ts` | no |
+| Status | what a client shows about the agent, all derived from committed state | `src/server/status.ts` | in example |
 
 ## D. Services the agent reaches
 

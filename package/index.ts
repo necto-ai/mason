@@ -2,10 +2,8 @@ import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT, type Context } from "@earendil-works/chord/context";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
 	AgentDoc,
-	AssistantEntry,
 	type Conversation,
 	type ConversationId,
 	type ConversationView,
@@ -14,7 +12,11 @@ import {
 	defineExtension,
 	type EntryRecord,
 	Harness,
+	type InboxState,
+	type LiveState,
 	MemoryStorage,
+	type Submission,
+	type UsageState,
 	type WatchHandle,
 } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
@@ -32,6 +34,11 @@ export type { Context } from "@earendil-works/chord/context";
 export type {
 	ConversationView,
 	EntryRecord,
+	InboxState,
+	LiveState,
+	SettledSubmissionRecord,
+	Submission,
+	UsageState,
 	WatchCall,
 	WatchEnd,
 	WatchHandle,
@@ -53,21 +60,23 @@ export interface AgentOptions {
 	readonly storage?: "sqlite" | "memory";
 }
 
-/** What a turn settled as, and the answer it produced. */
-export interface PromptResult {
-	readonly status: "done" | "unanswered";
-	readonly message?: AssistantMessage;
-}
+export type AgentView = ConversationView & {
+	readonly docs: {
+		readonly "pi.live"?: LiveState;
+		readonly "pi.inbox"?: InboxState;
+		readonly "pi.usage"?: UsageState;
+	};
+};
 
 export interface Agent {
 	readonly id: ConversationId;
 	readonly conversation: Conversation;
-	/** One turn: the message in, the answer out. Resolves when the turn settles. */
-	prompt(text: string, context?: Context): Promise<PromptResult>;
+	/** Admit input without waiting: steer at the next tool or final boundary, or follow up after the run. */
+	submit(text: string, mode: "followUp" | "steer", context?: Context): Promise<Submission>;
 	/** The transcript, oldest first. */
 	entries(limit?: number, context?: Context): Promise<readonly EntryRecord[]>;
 	/** Chord's watch over the conversation: the view, then its changes. */
-	watch(context?: Context): Promise<WatchHandle<ConversationView>>;
+	watch(context?: Context): Promise<WatchHandle<AgentView>>;
 	close(context?: Context): Promise<void>;
 }
 
@@ -126,12 +135,9 @@ export async function createAgent(options: AgentOptions = {}): Promise<{ agent: 
 	const agent: Agent = {
 		id: root.id,
 		conversation: root,
-		async prompt(text, context = BACKGROUND_CONTEXT) {
-			const submission = await root.submit({ type: "input", content: text, requestId: randomUUID() }, context);
-			const settled = await submission.wait(context);
-			const page = await root.entries({ order: "ascending" }, 200, undefined, context);
-			const answer = page.items.findLast((entry) => AssistantEntry.is(entry));
-			return { status: settled.status, message: answer?.model?.[0] as AssistantMessage | undefined };
+		async submit(text, mode, context = BACKGROUND_CONTEXT) {
+			if (mode !== "followUp" && mode !== "steer") throw new TypeError("Expected submission mode followUp or steer");
+			return root.submit({ type: "input", content: text, requestId: randomUUID(), whenBusy: mode }, context);
 		},
 		async entries(limit = 50, context = BACKGROUND_CONTEXT) {
 			return (await root.entries({ order: "ascending" }, limit, undefined, context)).items;
