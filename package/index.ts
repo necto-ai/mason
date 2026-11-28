@@ -3,7 +3,6 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT, type Context } from "@earendil-works/chord/context";
 import {
-	AgentDoc,
 	type Conversation,
 	type ConversationId,
 	type ConversationView,
@@ -24,6 +23,7 @@ import { createToolSearchExtension } from "@earendil-works/pi-durable/tool-searc
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { memoryTools } from "./src/agent-files.ts";
 import { localDevice } from "./src/device.ts";
+import { type ClassifyEvent, type MasonExtension, startEvents } from "./src/events.ts";
 import { ensureHome, home as homePaths } from "./src/home.ts";
 import { connectModels, ensureCatalog, type FauxStep, fauxModels } from "./src/models.ts";
 import { DEFAULT_SOUL, promptExtension } from "./src/prompt.ts";
@@ -44,20 +44,17 @@ export type {
 	WatchHandle,
 } from "@earendil-works/pi-durable";
 export { AssistantEntry, ResetEntry, SystemEntry, ToolResultEntry, UserEntry } from "@earendil-works/pi-durable";
+export type { ClassifyEvent, MasonExtension, ServiceEvent } from "./src/events.ts";
 export type { FauxStep } from "./src/models.ts";
 
-/** What one complete mason agent is made of. Everything else has a default. */
 export interface AgentOptions {
-	/** The bot's home. Defaults to `~/.mason/<name>`. */
 	readonly home?: string;
-	/** The bot's name, used for the default home. */
 	readonly name?: string;
-	/** The words the agent is given instead of a person's file. */
 	readonly soul?: string;
-	/** Answer with the faux provider instead of a model, or say what it replies. */
 	readonly faux?: boolean | readonly FauxStep[];
-	/** Keep the log in memory instead of a sqlite file. */
 	readonly storage?: "sqlite" | "memory";
+	readonly extensions?: readonly MasonExtension[];
+	readonly classifyEvent?: ClassifyEvent;
 }
 
 export type AgentView = ConversationView & {
@@ -71,11 +68,10 @@ export type AgentView = ConversationView & {
 export interface Agent {
 	readonly id: ConversationId;
 	readonly conversation: Conversation;
+	readonly eventJournal?: Pick<Conversation, "entries">;
 	/** Admit input without waiting: steer at the next tool or final boundary, or follow up after the run. */
 	submit(text: string, mode: "followUp" | "steer", context?: Context): Promise<Submission>;
-	/** The transcript, oldest first. */
 	entries(limit?: number, context?: Context): Promise<readonly EntryRecord[]>;
-	/** Chord's watch over the conversation: the view, then its changes. */
 	watch(context?: Context): Promise<WatchHandle<AgentView>>;
 	close(context?: Context): Promise<void>;
 }
@@ -90,11 +86,18 @@ export async function createAgent(options: AgentOptions = {}): Promise<{ agent: 
 		options.faux === undefined || options.faux === false
 			? await connectModels(settings, paths)
 			: fauxModels(options.faux === true ? undefined : options.faux);
+	const sources = options.extensions?.flatMap((extension) => extension.services ?? []) ?? [];
+	if (
+		sources.some(({ name }) => !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(name)) ||
+		new Set(sources.map(({ name }) => name)).size !== sources.length
+	)
+		throw new TypeError("Service source names must be unique and use lowercase letters, numbers, or ._-");
 	const registry = createRegistry();
 	for (const extension of declareTools([
 		CodingTools,
 		defineExtension({ name: "memory", tools: memoryTools({ home: paths, write: false }) }),
 		createToolSearchExtension(),
+		...(options.extensions ?? []),
 	])) {
 		registry.install(extension);
 	}
@@ -121,20 +124,14 @@ export async function createAgent(options: AgentOptions = {}): Promise<{ agent: 
 
 	const agentConfig = { model: ref, cwd: paths.workspaceDir, thinkingLevel: settings.thinking };
 	const root = await harness.root(BACKGROUND_CONTEXT, { agent: agentConfig });
-	const stored = await harness.snapshot(AgentDoc, root.id, BACKGROUND_CONTEXT);
-	if (
-		stored?.instructions != null ||
-		stored?.model?.provider !== ref.provider ||
-		stored?.model?.modelId !== ref.modelId ||
-		stored?.thinkingLevel !== settings.thinking
-	) {
-		await root.commit((tx) => configure(tx, root.id, agentConfig), BACKGROUND_CONTEXT);
-	}
+	await root.commit((tx) => configure(tx, root.id, agentConfig), BACKGROUND_CONTEXT);
 	harness.resume();
+	const services = sources.length ? await startEvents(harness, root, sources, options.classifyEvent) : undefined;
 
 	const agent: Agent = {
 		id: root.id,
 		conversation: root,
+		eventJournal: services?.journal,
 		async submit(text, mode, context = BACKGROUND_CONTEXT) {
 			if (mode !== "followUp" && mode !== "steer") throw new TypeError("Expected submission mode followUp or steer");
 			return root.submit({ type: "input", content: text, requestId: randomUUID(), whenBusy: mode }, context);
@@ -146,6 +143,7 @@ export async function createAgent(options: AgentOptions = {}): Promise<{ agent: 
 			return root.watch(context);
 		},
 		async close(context = BACKGROUND_CONTEXT) {
+			await services?.close();
 			await harness.close(context);
 			device.close();
 		},

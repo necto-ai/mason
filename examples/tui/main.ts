@@ -40,7 +40,9 @@ function plain(message: Message | undefined): string {
 }
 
 function show(entry: EntryRecord): void {
-	if (UserEntry.is(entry)) transcript.addChild(new UserMessageComponent(plain(entry.model?.[0]), getMarkdownTheme()));
+	if (entry.kind === "mason.service-events") transcript.addChild(new Text(plain(entry.model?.[0]), 1, 0));
+	else if (UserEntry.is(entry))
+		transcript.addChild(new UserMessageComponent(plain(entry.model?.[0]), getMarkdownTheme()));
 	else if (AssistantEntry.is(entry))
 		transcript.addChild(
 			new AssistantMessageComponent(entry.model?.[0] as AssistantMessage, false, getMarkdownTheme()),

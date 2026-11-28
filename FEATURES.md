@@ -41,10 +41,10 @@ integration, a projection, a CLI, or a turn that starts without someone typing.
 | Roles | two models, `main` and `subagent`, thinking level refused at boot when the catalog lacks it | `src/server/common.ts` | no: one model |
 | Turn limits | bytes on the socket and turns per sender, so a fire cannot spend without a bound | `src/server/limits.ts` | no |
 | Run supervisor | re-arms an input the provider outage left unanswered, after pi-ai's own retries | `src/server/run-retry.ts` | no |
-| Wake-ups | a routine's schedule, an integration event, or a retry starts a turn with nobody typing | `src/server/hooks.ts`, `schedule.ts` | no |
+| Wake-ups | a routine's schedule, an integration event, or a retry starts a turn with nobody typing | `src/server/hooks.ts`, `schedule.ts` | part: `examples/events/main.ts`, durable service-event steers; no routines or turn retry |
 | Admission and controls | where a submission waits, and `stop`/`compact`/`clear`/`status` as durable commands | `src/server/admission.ts`, `commands.ts` | no |
 | Write lease | one write-capable child at a time on one checkout, refused rather than queued | `src/server/lease.ts` | no |
-| Event log | every event a connector raises, one append-only line each, whether or not it woke anything | `src/server/events-log.ts` | no |
+| Event log | every accepted event and its decision, whether or not it woke anything | `src/server/events-log.ts` | part: passive entries in a separate journal in `agent.sqlite`; no connector |
 | Delivery gates | a submission turn must not end silent, and work that leaves a file must say where it is | `src/server/extensions/delivery.ts` | no |
 | Operator reports | one place failures surface: the retry, a dropped wrapper, a refused model | `src/server/runtime.ts` | part: stderr only |
 
