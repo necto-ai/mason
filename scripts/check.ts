@@ -41,16 +41,16 @@ try {
 	await agent.conversation.compact(undefined, context);
 	await agent.conversation.waitForIdle(context);
 	const compacted = await agent.entries();
-	const review = compacted.find((entry) => entry.kind === "mason.review");
+	const revision = compacted.find((entry) => entry.kind === "mason.revision");
 	if (
-		review === undefined ||
-		!JSON.stringify(review.data).includes('"outcome":"reviewed"') ||
-		!compacted.some((entry) => entry.kind === "pi.compaction" && entry.id > review.id) ||
+		revision === undefined ||
+		!JSON.stringify(revision.data).includes('"outcome":"revised"') ||
+		!compacted.some((entry) => entry.kind === "pi.compaction" && entry.id > revision.id) ||
 		!(await readFile(join(home, "agent", "profile.md"), "utf8")).includes("oak keels")
 	) {
-		throw new Error("compaction did not refresh memory");
+		throw new Error("compaction did not revise memory");
 	}
-	console.log("compaction: reviewed and wrote profile.md");
+	console.log("compaction: revised and wrote profile.md");
 } finally {
 	await agent.close();
 	await rm(home, { recursive: true, force: true });

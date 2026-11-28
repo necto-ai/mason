@@ -28,7 +28,7 @@ import { localDevice } from "./src/device.ts";
 import { ensureHome, home as homePaths } from "./src/home.ts";
 import { connectModels, ensureCatalog, type FauxStep, fauxModels } from "./src/models.ts";
 import { DEFAULT_SOUL, promptExtension } from "./src/prompt.ts";
-import { reviewHook } from "./src/review.ts";
+import { revisionHook } from "./src/revision.ts";
 import { readSettings, type Settings } from "./src/settings.ts";
 import { declareTools } from "./src/tools.ts";
 
@@ -58,8 +58,8 @@ export interface AgentOptions {
 	readonly soul?: string;
 	/** Answer with the faux provider instead of a model, or say what it replies. */
 	readonly faux?: boolean | readonly FauxStep[];
-	/** Set false to compact without refreshing memory. */
-	readonly review?: boolean;
+	/** Set false to compact without revising memory. */
+	readonly revise?: boolean;
 	/** Keep the log in memory instead of a sqlite file. */
 	readonly storage?: "sqlite" | "memory";
 }
@@ -102,7 +102,7 @@ export async function createAgent(options: AgentOptions = {}): Promise<{ agent: 
 			createToolSearchExtension(),
 		]),
 		promptExtension(paths),
-		reviewHook(paths, registry, () => ({ root, harness }), options.review !== false),
+		revisionHook(paths, registry, () => ({ root, harness }), options.revise !== false),
 	];
 	for (const extension of extensions) registry.install(extension);
 	const device = localDevice(paths.workspaceDir);

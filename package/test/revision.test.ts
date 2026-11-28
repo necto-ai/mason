@@ -12,18 +12,18 @@ const profile = "Their boats have an oak keel.\n";
 const skill = "---\nname: caulk\ndescription: Caulking the hull\n---\nUse oakum.\n";
 const read = (n: number): FauxStep => ({ call: "memory_read", arguments: { path: `evidence-${n}.md` } });
 const save = (path: string, content: string): FauxStep => ({ call: "memory_write", arguments: { path, content } });
-const reviews = async (agent: Agent) => (await agent.entries(200)).filter((entry) => entry.kind === "mason.review");
+const revisions = async (agent: Agent) => (await agent.entries(200)).filter((entry) => entry.kind === "mason.revision");
 const children = (agent: Agent, ownerTaskId: TaskId) =>
 	agent.conversation.commit((tx) => tx.scanConversations({ ownerTaskId }, 2), context).then((page) => page.items);
 
 async function fixture(
 	t: TestContext,
 	faux: readonly FauxStep[],
-	review = true,
+	revise = true,
 	storage: "sqlite" | "memory" = "memory",
 ) {
-	const home = await mkdtemp(join(tmpdir(), "mason-review-"));
-	const { agent } = await createAgent({ home, storage, faux, review });
+	const home = await mkdtemp(join(tmpdir(), "mason-revision-"));
+	const { agent } = await createAgent({ home, storage, faux, revise });
 	t.after(async () => {
 		await agent.close();
 		await rm(home, { recursive: true, force: true });
@@ -57,7 +57,7 @@ async function compact(agent: Agent) {
 	return { id, entry };
 }
 
-test("three skips preserve four rounds; the fifth reviews before compaction and refreshes the next prompt", async (t) => {
+test("three skips preserve four rounds; the fifth revises before compaction and refreshes the next prompt", async (t) => {
 	const { agent, home } = await fixture(t, [
 		read(1),
 		read(2),
@@ -71,7 +71,7 @@ test("three skips preserve four rounds; the fifth reviews before compaction and 
 		"five done",
 		save("profile.md", profile),
 		save("skills/caulk/SKILL.md", skill),
-		"review done",
+		"revision done",
 		"summary four",
 		"uses new memory",
 	]);
@@ -80,17 +80,17 @@ test("three skips preserve four rounds; the fifth reviews before compaction and 
 	for (let i = 0; i < 3; i++) {
 		const { id } = await compact(agent);
 		assert.deepEqual(await children(agent, id), []);
-		assert.deepEqual((await reviews(agent))[i]?.data, { taskId: id, outcome: "skipped", reason: "few-rounds" });
+		assert.deepEqual((await revisions(agent))[i]?.data, { taskId: id, outcome: "skipped", reason: "few-rounds" });
 	}
 	await finishFollowUp(agent, "And the fifth?");
 	const { id, entry } = await compact(agent);
 	const [child] = await children(agent, id);
 	assert.ok(child);
 	assert.equal((await children(agent, id)).length, 1);
-	const review = (await reviews(agent))[3];
-	assert.deepEqual(review?.data, { taskId: id, outcome: "reviewed", conversationId: child.id });
-	assert.equal(review?.model, undefined);
-	assert.ok(review && review.id < entry.id);
+	const revision = (await revisions(agent))[3];
+	assert.deepEqual(revision?.data, { taskId: id, outcome: "revised", conversationId: child.id });
+	assert.equal(revision?.model, undefined);
+	assert.ok(revision && revision.id < entry.id);
 	const childEntries = await agent.conversation.commit(
 		(tx) => tx.scanEntries({ conversationId: child.id }, 50),
 		context,
@@ -104,10 +104,10 @@ test("three skips preserve four rounds; the fifth reviews before compaction and 
 		digest,
 		/finding number 1[\s\S]*finding number 2[\s\S]*finding number 3[\s\S]*finding number 4[\s\S]*finding number 5/,
 	);
-	assert.doesNotMatch(digest, /few-rounds|mason\.review/);
+	assert.doesNotMatch(digest, /few-rounds|mason\.revision/);
 	const writes = childEntries.items.filter(ToolResultEntry.is);
 	assert.equal(writes.length, 2);
-	for (const write of writes) assert.ok(write.id < review.id && JSON.stringify(write.model).includes("wrote "));
+	for (const write of writes) assert.ok(write.id < revision.id && JSON.stringify(write.model).includes("wrote "));
 	assert.equal(await readFile(join(home, "agent", "profile.md"), "utf8"), profile);
 	assert.equal(await readFile(join(home, "agent", "skills", "caulk", "SKILL.md"), "utf8"), skill);
 	await finishFollowUp(agent, "What do you remember?");
@@ -115,19 +115,19 @@ test("three skips preserve four rounds; the fifth reviews before compaction and 
 	assert.match(JSON.stringify(system), /oak keel/);
 	assert.match(JSON.stringify(system), /Caulking the hull/);
 	const view = await agent.conversation.context(context);
-	assert.deepEqual(view.contributions[view.entries.findIndex((e) => e.id === review.id)], []);
-	assert.doesNotMatch(JSON.stringify(view.messages), /finding number 1|review done/);
+	assert.deepEqual(view.contributions[view.entries.findIndex((e) => e.id === revision.id)], []);
+	assert.doesNotMatch(JSON.stringify(view.messages), /finding number 1|revision done/);
 });
 
-test("review:false still compacts without a record or child", async (t) => {
+test("revise:false still compacts without a record or child", async (t) => {
 	const { agent } = await fixture(t, [read(1), read(2), read(3), read(4), read(5), "answer", "summary"], false);
 	await finishFollowUp(agent, "Collect findings");
 	const { id } = await compact(agent);
-	assert.deepEqual(await reviews(agent), []);
+	assert.deepEqual(await revisions(agent), []);
 	assert.deepEqual(await children(agent, id), []);
 });
 
-test("a thrown review tool fails the review, not the compaction, and doesn't move the boundary", async (t) => {
+test("a thrown revision tool fails the revision, not the compaction, and doesn't move the boundary", async (t) => {
 	const { agent, home } = await fixture(t, [
 		read(1),
 		read(2),
@@ -136,19 +136,19 @@ test("a thrown review tool fails the review, not the compaction, and doesn't mov
 		read(5),
 		"answer",
 		save("skills/caulk/SKILL.md", skill),
-		"review done",
+		"revision done",
 		"summary",
 		"still answering",
 		save("profile.md", profile),
-		"second review",
+		"second revision",
 		"next summary",
 	]);
 	await finishFollowUp(agent, "Collect findings");
 	const path = join(home, "agent", "profile.md");
 	await mkdir(path);
 	const failure = await compact(agent);
-	const [failedReview] = await reviews(agent);
-	assert.deepEqual(failedReview?.data, {
+	const [failedRevision] = await revisions(agent);
+	assert.deepEqual(failedRevision?.data, {
 		taskId: failure.id,
 		outcome: "failed",
 		reason: "tool-error",
@@ -157,9 +157,9 @@ test("a thrown review tool fails the review, not the compaction, and doesn't mov
 	await finishFollowUp(agent, "Can you still answer?");
 	await rm(path, { recursive: true });
 	const success = await compact(agent);
-	assert.deepEqual((await reviews(agent))[1]?.data, {
+	assert.deepEqual((await revisions(agent))[1]?.data, {
 		taskId: success.id,
-		outcome: "reviewed",
+		outcome: "revised",
 		conversationId: (await children(agent, success.id))[0]?.id,
 	});
 	assert.equal(await readFile(path, "utf8"), profile);
@@ -218,7 +218,7 @@ function reply(res: ServerResponse, reply: string | FauxStep, total = 12) {
 
 const five = [read(1), read(2), read(3), read(4), read(5), "findings recorded"];
 
-test("close after the write resumes the same review and commits it once", { timeout: 15_000 }, async (t) => {
+test("close after the write resumes the same revision and commits it once", { timeout: 15_000 }, async (t) => {
 	const { agent: seeded, home } = await fixture(t, five, true, "sqlite");
 	await finishFollowUp(seeded, "Make findings");
 	await pad(seeded);
@@ -232,7 +232,7 @@ test("close after the write resumes the same review and commits it once", { time
 		requests++;
 		if (requests === 1) reply(res, save("profile.md", profile));
 		else if (requests === 2) held.resolve();
-		else reply(res, requests === 3 ? "review done" : "summary");
+		else reply(res, requests === 3 ? "revision done" : "summary");
 	});
 	let { agent } = await createAgent({ home });
 	try {
@@ -241,7 +241,7 @@ test("close after the write resumes the same review and commits it once", { time
 		const [before] = await children(agent, id);
 		assert.ok(before);
 		assert.equal(await readFile(join(home, "agent", "profile.md"), "utf8"), profile);
-		assert.deepEqual(await reviews(agent), []);
+		assert.deepEqual(await revisions(agent), []);
 		assert.equal((await agent.entries()).some(CompactionEntry.is), false);
 		await agent.close();
 		({ agent } = await createAgent({ home }));
@@ -251,8 +251,8 @@ test("close after the write resumes the same review and commits it once", { time
 			[before.id],
 		);
 		assert.deepEqual(
-			(await reviews(agent)).map((e) => e.data),
-			[{ taskId: id, outcome: "reviewed", conversationId: before.id }],
+			(await revisions(agent)).map((e) => e.data),
+			[{ taskId: id, outcome: "revised", conversationId: before.id }],
 		);
 		assert.equal((await agent.entries()).filter(CompactionEntry.is).length, 1);
 		assert.equal(await readFile(join(home, "agent", "profile.md"), "utf8"), profile);
@@ -265,14 +265,14 @@ test("close after the write resumes the same review and commits it once", { time
 				"memory_read",
 				"memory_write",
 			]);
-			assert.match(JSON.stringify(messages), /Review the transcript/);
+			assert.match(JSON.stringify(messages), /Revise this person's Mason memory/);
 		}
 	} finally {
 		await agent.close();
 	}
 });
 
-test("a timed-out reviewer is stopped and compaction still completes", { timeout: 15_000 }, async (t) => {
+test("a timed-out revision is stopped and compaction still completes", { timeout: 15_000 }, async (t) => {
 	const { agent: seeded, home } = await fixture(t, five, true, "sqlite");
 	await finishFollowUp(seeded, "Make findings");
 	await seeded.close();
@@ -288,8 +288,8 @@ test("a timed-out reviewer is stopped and compaction still completes", { timeout
 	try {
 		const { id } = await compact(agent);
 		await disconnected.promise;
-		assert.match(JSON.stringify(await reviews(agent)), /"outcome":"failed","reason":"timeout"/);
-		await assertReviewerAborted(agent, id);
+		assert.match(JSON.stringify(await revisions(agent)), /"outcome":"failed","reason":"timeout"/);
+		await assertReviserAborted(agent, id);
 		await finishFollowUp(agent, "Are you still there?");
 		assert.equal(requests, 3);
 	} finally {
@@ -297,18 +297,18 @@ test("a timed-out reviewer is stopped and compaction still completes", { timeout
 	}
 });
 
-async function assertReviewerAborted(agent: Agent, id: TaskId) {
+async function assertReviserAborted(agent: Agent, id: TaskId) {
 	const [child] = await children(agent, id);
 	assert.ok(child);
 	const submission = await agent.conversation.commit(
-		(tx) => tx.submissionByRequest(child.id, `review:${id}`),
+		(tx) => tx.submissionByRequest(child.id, `revise:${id}`),
 		context,
 	);
 	assert.equal(submission?.status, "unanswered");
 	assert.equal(submission.reason, "aborted");
 }
 
-test("cancelling compaction stops its reviewer without consuming the boundary", { timeout: 15_000 }, async (t) => {
+test("cancelling compaction stops its revision without consuming the boundary", { timeout: 15_000 }, async (t) => {
 	const { agent: seeded, home } = await fixture(t, five, true, "sqlite");
 	await finishFollowUp(seeded, "Make findings");
 	await pad(seeded);
@@ -320,7 +320,7 @@ test("cancelling compaction stops its reviewer without consuming the boundary", 
 		if (++requests === 1) {
 			res.once("close", disconnected.resolve);
 			held.resolve();
-		} else reply(res, requests === 2 ? "review done" : "summary");
+		} else reply(res, requests === 2 ? "revision done" : "summary");
 	});
 	const { agent } = await createAgent({ home });
 	try {
@@ -328,13 +328,13 @@ test("cancelling compaction stops its reviewer without consuming the boundary", 
 		await held.promise;
 		await agent.conversation.abort(context);
 		await disconnected.promise;
-		await assertReviewerAborted(agent, id);
-		assert.deepEqual(await reviews(agent), []);
+		await assertReviserAborted(agent, id);
+		assert.deepEqual(await revisions(agent), []);
 		assert.equal((await agent.entries()).some(CompactionEntry.is), false);
 		const next = await compact(agent);
-		assert.deepEqual((await reviews(agent))[0]?.data, {
+		assert.deepEqual((await revisions(agent))[0]?.data, {
 			taskId: next.id,
-			outcome: "reviewed",
+			outcome: "revised",
 			conversationId: (await children(agent, next.id))[0]?.id,
 		});
 		assert.equal(requests, 3);
