@@ -126,9 +126,7 @@ export async function createAgent(options: AgentOptions = {}): Promise<{ agent: 
 	const root = await harness.root(BACKGROUND_CONTEXT, { agent: agentConfig });
 	await root.commit((tx) => configure(tx, root.id, agentConfig), BACKGROUND_CONTEXT);
 	harness.resume();
-	const services = sources.length
-		? await startEvents(harness, root, sources, settings.eventBatchMs ?? 1000, options.classifyEvent)
-		: undefined;
+	const services = sources.length ? await startEvents(harness, root, sources, options.classifyEvent) : undefined;
 
 	const agent: Agent = {
 		id: root.id,

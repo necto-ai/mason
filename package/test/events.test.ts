@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -54,8 +54,8 @@ test(
 				await delay(25);
 			const entries = await agent.entries();
 			const inputs = entries.filter((entry) => entry.kind === "mason.service-events");
-			assert.equal(inputs.length, 1);
-			assert.match(JSON.stringify(inputs[0]), /Meeting moved.*Meeting confirmed/);
+			assert.equal(inputs.length, 2);
+			assert.match(JSON.stringify(inputs), /Meeting moved.*Meeting confirmed/);
 			assert.doesNotMatch(JSON.stringify(entries), /Monthly newsletter/);
 			assert.match(
 				JSON.stringify(entries.find((entry) => entry.kind === "pi.system")),
@@ -68,7 +68,7 @@ test(
 		({ agent } = await open());
 		try {
 			await delay(1200);
-			assert.equal((await agent.entries()).filter((entry) => entry.kind === "mason.service-events").length, 1);
+			assert.equal((await agent.entries()).filter((entry) => entry.kind === "mason.service-events").length, 2);
 			const journal = await agent.eventJournal?.entries({ order: "ascending" }, 20, undefined, BACKGROUND_CONTEXT);
 			assert.equal(journal?.items.filter((entry) => entry.kind === "mason.event-received").length, 3);
 			assert.match(JSON.stringify(journal), /logOnly/);
@@ -85,7 +85,6 @@ test(
 		const home = await mkdtemp(join(tmpdir(), "mason-events-test-"));
 		t.after(() => rm(home, { recursive: true, force: true }));
 		await mkdir(join(home, "service"));
-		await writeFile(join(home, "service/settings.json"), '{"eventBatchMs":15}');
 		const started = Promise.withResolvers<void>();
 		const stopped = Promise.withResolvers<void>();
 		const extension: MasonExtension = {
@@ -117,7 +116,7 @@ test(
 		}
 		await stopped.promise;
 
-		const { agent: reopened, settings } = await createAgent({
+		const { agent: reopened } = await createAgent({
 			home,
 			faux: true,
 			extensions: [
@@ -131,7 +130,6 @@ test(
 			},
 		});
 		try {
-			assert.equal(settings.eventBatchMs, 15);
 			for (
 				let attempt = 0;
 				attempt < 120 && !(await reopened.entries()).some((entry) => entry.kind === "pi.assistant");

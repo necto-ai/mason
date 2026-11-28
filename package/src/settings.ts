@@ -8,7 +8,6 @@ export interface Settings {
 	/** The model id within that provider. */
 	readonly model: string;
 	readonly thinking: ModelThinkingLevel;
-	readonly eventBatchMs?: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = { provider: "ollama", model: "bonsai-2:9b", thinking: "off" };
@@ -45,7 +44,7 @@ export async function readSettings(path: string): Promise<Settings> {
 	}
 	const root = record(parsed, path);
 	for (const key of Object.keys(root)) {
-		if (key !== "provider" && key !== "model" && key !== "thinking" && key !== "eventBatchMs") {
+		if (key !== "provider" && key !== "model" && key !== "thinking") {
 			throw new Error(`${path}: unknown setting "${key}"`);
 		}
 	}
@@ -53,14 +52,7 @@ export async function readSettings(path: string): Promise<Settings> {
 	if (!THINKING.includes(thinking as ModelThinkingLevel)) {
 		throw new Error(`${path}: thinking is one of ${THINKING.join(", ")}`);
 	}
-	const eventBatchMs = root.eventBatchMs;
-	if (
-		eventBatchMs !== undefined &&
-		(typeof eventBatchMs !== "number" || !Number.isInteger(eventBatchMs) || eventBatchMs < 1 || eventBatchMs > 60_000)
-	)
-		throw new Error(`${path}: eventBatchMs must be an integer from 1 to 60000`);
 	return {
-		...(eventBatchMs !== undefined && { eventBatchMs }),
 		provider: root.provider === undefined ? DEFAULT_SETTINGS.provider : text(root.provider, `${path}: provider`),
 		model: root.model === undefined ? DEFAULT_SETTINGS.model : text(root.model, `${path}: model`),
 		thinking: thinking as ModelThinkingLevel,
