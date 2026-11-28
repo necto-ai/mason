@@ -60,6 +60,8 @@ export interface AgentOptions {
 	readonly faux?: boolean | readonly FauxStep[];
 	/** Set false to compact without revising memory. */
 	readonly revise?: boolean;
+	/** Maximum model turns per memory revision. Defaults to 20. */
+	readonly revisionMaxTurns?: number;
 	/** Keep the log in memory instead of a sqlite file. */
 	readonly storage?: "sqlite" | "memory";
 }
@@ -85,6 +87,9 @@ export interface Agent {
 }
 
 export async function createAgent(options: AgentOptions = {}): Promise<{ agent: Agent; settings: Settings }> {
+	const revisionMaxTurns = options.revisionMaxTurns === undefined ? 20 : options.revisionMaxTurns;
+	if (!Number.isSafeInteger(revisionMaxTurns) || revisionMaxTurns < 1)
+		throw new RangeError("revisionMaxTurns must be a positive integer");
 	const paths = homePaths(options.home ?? join(homedir(), ".mason", options.name ?? "mason"));
 	await ensureHome(paths, options.soul ?? DEFAULT_SOUL);
 	await ensureCatalog(paths);
@@ -102,7 +107,7 @@ export async function createAgent(options: AgentOptions = {}): Promise<{ agent: 
 			createToolSearchExtension(),
 		]),
 		promptExtension(paths),
-		revisionHook(paths, registry, () => ({ root, harness }), options.revise !== false),
+		revisionHook(paths, registry, () => ({ root, harness }), options.revise !== false, revisionMaxTurns),
 	];
 	for (const extension of extensions) registry.install(extension);
 	const device = localDevice(paths.workspaceDir);

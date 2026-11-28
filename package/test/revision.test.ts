@@ -82,7 +82,7 @@ test("three skips preserve four rounds; the fifth revises before compaction and 
 		assert.deepEqual(await children(agent, id), []);
 		assert.deepEqual((await revisions(agent))[i]?.data, { taskId: id, outcome: "skipped", reason: "few-rounds" });
 	}
-	await finishFollowUp(agent, "And the fifth?");
+	await finishFollowUp(agent, `And the fifth? ${"x".repeat(1_000)} tail beyond the cap`);
 	const { id, entry } = await compact(agent);
 	const [child] = await children(agent, id);
 	assert.ok(child);
@@ -100,6 +100,8 @@ test("three skips preserve four rounds; the fifth revises before compaction and 
 	assert.equal(typeof input.content, "string");
 	const digest = input.content as string;
 	assert.ok(digest.length <= 8_000);
+	assert.match(digest, /user: And the fifth\? x+ \[truncated\]\n/);
+	assert.doesNotMatch(digest, /tail beyond the cap/);
 	assert.match(
 		digest,
 		/finding number 1[\s\S]*finding number 2[\s\S]*finding number 3[\s\S]*finding number 4[\s\S]*finding number 5/,
@@ -117,6 +119,12 @@ test("three skips preserve four rounds; the fifth revises before compaction and 
 	const view = await agent.conversation.context(context);
 	assert.deepEqual(view.contributions[view.entries.findIndex((e) => e.id === revision.id)], []);
 	assert.doesNotMatch(JSON.stringify(view.messages), /finding number 1|revision done/);
+});
+
+test("revisionMaxTurns rejects invalid limits", async () => {
+	for (const revisionMaxTurns of [0, -1, 1.5, Infinity]) {
+		await assert.rejects(createAgent({ revisionMaxTurns }), /revisionMaxTurns must be a positive integer/);
+	}
 });
 
 test("revise:false still compacts without a record or child", async (t) => {

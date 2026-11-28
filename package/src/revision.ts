@@ -47,21 +47,34 @@ Keep existing useful content. Read a file before replacing it; write the entire 
 async function digest(api: HookApi, context: Context) {
 	let cursor: Cursor | undefined;
 	let rounds = 0;
+	const marker = " [truncated]";
+	const omitted = "[Earlier transcript truncated]\n";
 	let text = "";
+	let clipped = false;
+	const result = () => ({ rounds, text: (clipped ? omitted : "") + text });
 	do {
 		const page = await api.entries({ order: "descending" }, 64, cursor, context);
 		for (const entry of page.items) {
-			if (RevisionEntry.is(entry) && entry.data?.outcome === "revised") return { rounds, text };
+			if (RevisionEntry.is(entry) && entry.data?.outcome === "revised") return result();
 			if (ToolResultEntry.is(entry)) rounds++;
 			const message = entry.model?.[0];
-			if (text.length >= 8_000 || message === undefined || message.role === "system" || CompactionEntry.is(entry))
+			if (clipped || message === undefined || message.role === "system" || CompactionEntry.is(entry)) continue;
+			const body = contentText(message.content);
+			if (!body) continue;
+			const prefix = `${message.role}: `;
+			const limit = Math.min(
+				message.role === "toolResult" ? 500 : 1_000,
+				8_000 - omitted.length - text.length - prefix.length - 1,
+			);
+			if (limit <= marker.length && body.length > limit) {
+				clipped = true;
 				continue;
-			const body = contentText(message.content).slice(0, message.role === "toolResult" ? 500 : 1_000);
-			if (body) text = `${message.role}: ${body}\n`.slice(0, 8_000 - text.length) + text;
+			}
+			text = `${prefix}${body.length > limit ? body.slice(0, limit - marker.length) + marker : body}\n${text}`;
 		}
 		cursor = page.next;
 	} while (cursor !== undefined);
-	return { rounds, text };
+	return result();
 }
 
 async function reviseFailure(child: Conversation, taskId: TaskId, text: string, context: Context) {
@@ -86,6 +99,7 @@ export function revisionHook(
 	registry: Registry,
 	getRoot: () => { root: Conversation; harness: Harness },
 	enabled: boolean,
+	maxTurns: number,
 ) {
 	const writer = () => defineExtension({ name: "memory-revision-tools", tools: memoryTools({ home, write: true }) });
 	if (enabled) registry.install(writer());
@@ -112,7 +126,7 @@ export function revisionHook(
 						modelTools: null,
 						cwd: home.agentDir,
 						instructions: INSTRUCTIONS,
-						maxTurns: 12,
+						maxTurns,
 					});
 					return child.id;
 				}, context);
